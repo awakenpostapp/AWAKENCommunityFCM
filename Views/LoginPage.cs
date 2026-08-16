@@ -158,11 +158,12 @@ public sealed class LoginPage : ContentPage
                         },
                     new Label
                     {
-                        Text = "AWAKEN Community\nFCM",
+                        Text = "AWAKEN Community FCM",
                         FontFamily = "OpenSansSemibold",
-                        FontSize = 23,
+                        FontSize = 20,
                         TextColor = Colors.White,
                         HorizontalTextAlignment = TextAlignment.Center,
+                        LineBreakMode = LineBreakMode.NoWrap,
                         LineHeight = 1.12
                     },
                     new Label

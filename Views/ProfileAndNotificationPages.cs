@@ -418,16 +418,6 @@ public sealed class PersonalProfilePage : AsyncContentPage
         bindAccount.Clicked += async (_, _) =>
                     await Navigation.PushAsync(new BindAccountsPage(_database, Session));
 
-        var evaluationHistory = UiKit.SecondaryButton("Lịch sử đánh giá học viên");
-        evaluationHistory.Clicked += async (_, _) =>
-            await Navigation.PushAsync(new TraineeEvaluationHistoryPage(
-                _database,
-                Session,
-                CurrentUserId,
-                string.IsNullOrWhiteSpace(profile.FullName)
-                    ? Session.CurrentUser?.Username ?? "Cầu thủ học viên"
-                    : profile.FullName));
-
         var profileName = UiKit.LargeTitle(
             string.IsNullOrWhiteSpace(profile.FullName)
                 ? Session.CurrentUser?.Username ?? "Hồ sơ"
@@ -447,11 +437,6 @@ public sealed class PersonalProfilePage : AsyncContentPage
             edit,
             bindAccount
         };
-        if (role == UserRole.Trainee)
-        {
-            children.Add(evaluationHistory);
-        }
-
         Content = UiKit.ScrollBody(
             children.ToArray());
     }

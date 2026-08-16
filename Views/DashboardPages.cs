@@ -177,6 +177,15 @@ public sealed class FounderDashboardPage : AsyncContentPage
             await PushPageAsync(new AttendanceHubPage(_database, Session)));
         root.Children.Add(actions);
 
+        var evaluationRequests = UiKit.SecondaryButton("▣ Lớp mở yêu cầu đánh giá");
+        evaluationRequests.Clicked += async (_, _) =>
+            await PushPageAsync(new FounderEvaluationRequestPage(
+                _database,
+                Session,
+                _media,
+                _rememberedLogin));
+        root.Children.Add(evaluationRequests);
+
         Content = UiKit.KeyboardAwareScroll(root);
     }
 
@@ -635,6 +644,17 @@ public sealed class TraineeDashboardPage : AsyncContentPage
                 }));
             }
         }
+
+        var evaluations = UiKit.SecondaryButton("Lịch sử đánh giá học viên");
+        evaluations.Clicked += async (_, _) =>
+            await Navigation.PushAsync(new TraineeEvaluationHistoryPage(
+                _database,
+                Session,
+                CurrentUserId,
+                string.IsNullOrWhiteSpace(Session.CurrentProfile?.FullName)
+                    ? Session.CurrentUser?.Username ?? "Cầu thủ học viên"
+                    : Session.CurrentProfile.FullName));
+        root.Children.Add(evaluations);
 
         var unread = notifications.Count(item => !item.IsRead);
         if (unread > 0)

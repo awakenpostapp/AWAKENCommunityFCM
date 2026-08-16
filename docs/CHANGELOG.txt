@@ -1,5 +1,14 @@
 # Change log
 
+Release 3.0 - build 104 - 2026-08-16
+
+- Thay app icon bằng AWAKEN_AppIcon_Light_1024.png do người dùng cung cấp; giữ nguyên ApplicationId, database và toàn bộ kết nối Cloudflare.
+- Tên AWAKEN Community FCM trên màn hình đăng nhập được bố trí trên một dòng với cỡ chữ phù hợp màn hình nhỏ.
+- Founder có nút mở danh sách các lớp đang mở yêu cầu Coach đánh giá; chạm vào lớp để xem chi tiết và lịch sử đánh giá.
+- Lịch sử đánh giá của Cầu thủ học viên được đưa ra ngoài trang hồ sơ, mở từ trang Hôm nay của account Trainee.
+- Avatar hồ sơ bỏ nền/khung vuông bên ngoài hình tròn.
+- Android build tăng lên 104; artifact cũ không bị ghi đè.
+
 Release 3.0 - build 103 - 2026-08-16
 
 - Thu gọn toàn bộ pill trạng thái theo đúng kích thước nội dung; pill không còn bị kéo đầy chiều cao của card.

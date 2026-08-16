@@ -6,6 +6,95 @@ using CommunityFootballClubManager.Ui;
 namespace CommunityFootballClubManager.Views;
 
 /// <summary>
+/// Founder entry point for classes where the Coach evaluation request is open.
+/// The list stays intentionally compact; selecting a class opens its normal
+/// class detail page, where the Founder can review the evaluation history.
+/// </summary>
+public sealed class FounderEvaluationRequestPage : AsyncContentPage
+{
+    private readonly AppDatabase _database;
+    private readonly MediaService _media;
+    private readonly RememberedLoginService _rememberedLogin;
+
+    public FounderEvaluationRequestPage(
+        AppDatabase database,
+        SessionService session,
+        MediaService media,
+        RememberedLoginService rememberedLogin)
+        : base(session, "Lớp mở yêu cầu đánh giá")
+    {
+        _database = database;
+        _media = media;
+        _rememberedLogin = rememberedLogin;
+    }
+
+    protected override async Task LoadAsync()
+    {
+        if (Session.CurrentUser?.Role != UserRole.Founder)
+        {
+            throw new UnauthorizedAccessException(
+                "Chỉ Sáng lập & Điều hành được mở danh sách yêu cầu đánh giá.");
+        }
+
+        var classes = await _database.GetClassesAsync(
+            CurrentUserId,
+            refreshOnline: true);
+        var openClasses = classes
+            .Where(row => row.Class.IsActive && row.Class.EvaluationRequestOpen)
+            .OrderBy(row => row.Class.Name)
+            .ToList();
+
+        var root = new VerticalStackLayout
+        {
+            Padding = UiKit.PagePadding,
+            Spacing = UiKit.SectionSpacing
+        };
+        root.Children.Add(UiKit.Caption(
+            "Các lớp đang mở yêu cầu để Coach nhập đánh giá học viên.",
+            UiKit.TextSecondary));
+
+        if (openClasses.Count == 0)
+        {
+            root.Children.Add(UiKit.EmptyState(
+                "Chưa có lớp mở yêu cầu đánh giá",
+                "Mở yêu cầu trong chi tiết lớp học để Coach có thể đánh giá."));
+            Content = UiKit.KeyboardAwareScroll(root);
+            return;
+        }
+
+        foreach (var row in openClasses)
+        {
+            var details = new VerticalStackLayout
+            {
+                Spacing = 5,
+                Children =
+                {
+                    UiKit.Headline(row.Class.Name),
+                    UiKit.Caption(row.ScheduleText, UiKit.TextSecondary),
+                    UiKit.Caption($"Coach: {row.CoachNames}", UiKit.TextSecondary),
+                    UiKit.Caption($"Sân: {row.Venue?.Name ?? "Chưa cập nhật"}", UiKit.TextSecondary),
+                    UiKit.SuccessStatusBadge("Đang mở yêu cầu đánh giá"),
+                    UiKit.Caption("Chạm để xem lớp và lịch sử đánh giá.", UiKit.Primary)
+                }
+            };
+            var card = UiKit.Card(details);
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += async (_, _) =>
+                await PushPageAsync(new ClassDetailsPage(
+                    _database,
+                    Session,
+                    _media,
+                    _rememberedLogin,
+                    row));
+            card.GestureRecognizers.Add(tap);
+            root.Children.Add(card);
+        }
+
+        Content = UiKit.KeyboardAwareScroll(root);
+    }
+}
+
+/// <summary>
 /// Coach entry point for the evaluation workflow. The first screen is kept
 /// deliberately compact: it contains classes only. A Coach taps a class to
 /// open the limited trainee roster for that class.

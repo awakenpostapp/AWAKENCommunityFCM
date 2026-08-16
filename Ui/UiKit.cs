@@ -549,8 +549,7 @@ public static class UiKit
                 Center = new Point(size / 2, size / 2),
                 RadiusX = size / 2,
                 RadiusY = size / 2
-            },
-            BackgroundColor = TealSoft
+            }
         };
     }
 
