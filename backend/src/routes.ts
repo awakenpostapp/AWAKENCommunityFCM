@@ -2026,6 +2026,21 @@ export async function updateInvoiceCycles(request: Request, env: Env, invoiceId:
   return json({ cycleCount, amountVnd: amount, plannedSessionCount: planned });
 }
 
+function nextSalaryPeriod(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/u.exec(period);
+  if (!match) {
+    throw new ApiError(500, "invalid_salary_period", "Kỳ lương không hợp lệ.");
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) {
+    throw new ApiError(500, "invalid_salary_period", "Kỳ lương không hợp lệ.");
+  }
+  return month === 12
+    ? `${year + 1}-01`
+    : `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
 export async function updateSalary(request: Request, env: Env, salaryId: string): Promise<Response> {
   const auth = await authenticate(request, env);
   requireRole(auth, "founder");
@@ -2044,6 +2059,22 @@ export async function updateSalary(request: Request, env: Env, salaryId: string)
      WHERE id=? AND tenant_id=?`,
   ).bind(body.isPaid ? "paid" : "pending", body.isPaid ? now : null,
     body.isPaid ? auth.id : null, optionalText(body.notes, "notes", 500), now, salaryId, tenantId).run();
+  if (body.isPaid) {
+    const nextPeriod = nextSalaryPeriod(String(salary.period));
+    await env.DB.prepare(
+      `INSERT INTO coach_salaries
+         (id, tenant_id, coach_user_id, period, amount_vnd, due_date, status, updated_at)
+       VALUES (?, ?, ?, ?, 0, ?, 'pending', ?)
+       ON CONFLICT(coach_user_id, period) DO NOTHING`,
+    ).bind(
+      newId(),
+      tenantId,
+      String(salary.coach_user_id),
+      nextPeriod,
+      `${nextPeriod}-10`,
+      now,
+    ).run();
+  }
   await audit(env, tenantId, auth.id, body.isPaid ? "salary.paid" : "salary.updated", "coach_salary", salaryId);
   return noContent();
 }

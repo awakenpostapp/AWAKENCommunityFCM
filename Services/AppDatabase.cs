@@ -6911,6 +6911,13 @@ public sealed partial class AppDatabase
             onlineSalary.PaidAtUtc = isPaid ? DateTime.UtcNow : onlineSalary.PaidAtUtc;
             onlineSalary.PaidByUserId = isPaid ? actorUserId : onlineSalary.PaidByUserId;
             onlineSalary.UpdatedAtUtc = DateTime.UtcNow;
+            // The Worker creates the next pending salary box atomically when
+            // a salary is marked paid. Refresh the projection so the detail
+            // screen can show that new box immediately.
+            if (isPaid)
+            {
+                await ReloadOnlineSnapshotAsync();
+            }
             return;
         }
 
@@ -6951,6 +6958,12 @@ public sealed partial class AppDatabase
             }
         }
         await Database.UpdateAsync(salary);
+        if (isPaid && !wasPaid)
+        {
+            await EnsureCoachSalaryForPeriodAsync(
+                salary.CoachUserId,
+                NextSalaryPeriodStart(salary.Period));
+        }
         await AddAuditAsync(
             actorUserId,
             isPaid
@@ -6960,6 +6973,18 @@ public sealed partial class AppDatabase
             salary.Id,
             salary.AmountVnd.ToString(CultureInfo.InvariantCulture));
         QueueCloudProjectionRefresh();
+    }
+
+    private static DateTime NextSalaryPeriodStart(string period)
+    {
+        return DateTime.TryParseExact(
+                period,
+                "yyyy-MM",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed)
+            ? parsed.AddMonths(1)
+            : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(1);
     }
 
     private async Task<CoachSalary> EnsureCoachSalaryForPeriodAsync(

@@ -1,5 +1,11 @@
 # Android build artifacts
 
+## Release 3.0 — build 106
+
+| File | Purpose | SHA-256 |
+|---|---|---|
+| \`AWAKENCommunityFCM-v3.0-build106-Release.apk\` | Signed online Release APK (latest; upload to GitHub Release) | \`698FDDD4D7F2C632E38A18F6FFE79BCC18E66A2F3254D772FEB1DB666DC326CF\` |
+
 ## Release 3.0 — build 105
 
 | File | Purpose | SHA-256 |

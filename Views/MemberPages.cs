@@ -128,6 +128,8 @@ public sealed class MemberRoleListPage : AsyncContentPage
     private readonly VerticalStackLayout _list;
     private readonly Label _summary;
     private List<MemberRow> _members = [];
+    private IReadOnlyDictionary<string, TraineeTuitionSummary> _traineeTuition =
+        new Dictionary<string, TraineeTuitionSummary>(StringComparer.Ordinal);
 
     public MemberRoleListPage(
         AppDatabase database,
@@ -177,6 +179,23 @@ public sealed class MemberRoleListPage : AsyncContentPage
                 _role,
                 includeInactive: true))
             .ToList();
+        if (_role == UserRole.Trainee)
+        {
+            var invoices = await _database.GetInvoicesAsync(CurrentUserId);
+            _traineeTuition = invoices
+                .Where(item => item.Invoice.Status == InvoiceStatus.Paid)
+                .GroupBy(item => item.Invoice.TraineeUserId)
+                .ToDictionary(
+                    group => group.Key,
+                    group => new TraineeTuitionSummary(
+                        group.Sum(item => Math.Max(1, item.Invoice.CycleCount)),
+                        group.Sum(item => Math.Max(0, item.Progress.AttendedSessions))),
+                    StringComparer.Ordinal);
+        }
+        else
+        {
+            _traineeTuition = new Dictionary<string, TraineeTuitionSummary>(StringComparer.Ordinal);
+        }
         _summary.Text =
             $"{_members.Count} account · Chạm vào một hồ sơ để xem thông tin.";
         RenderMembers();
@@ -223,29 +242,41 @@ public sealed class MemberRoleListPage : AsyncContentPage
         var avatar = UiKit.Avatar(member.Profile.PhotoPath);
         grid.Children.Add(avatar);
 
+        var textChildren = new List<View>
+        {
+            UiKit.Headline(member.DisplayName)
+        };
+        if (member.Account.Role == UserRole.Trainee)
+        {
+            textChildren.Add(CreateTraineeTuitionStatus(member));
+        }
+        textChildren.Add(UiKit.Caption(
+            $"@{member.Account.Username} · {DomainText.Role(member.Account.Role)}"));
+        if (member.Account.Role == UserRole.Coach)
+        {
+            textChildren.Add(UiKit.Caption(
+                CoachPositionCatalog.Label(member.Profile.CoachPosition),
+                UiKit.Primary));
+        }
+        textChildren.Add(UiKit.Caption(member.Account.Role == UserRole.Trainee
+            ? (string.IsNullOrWhiteSpace(member.Profile.GuardianPhone)
+                ? "Chưa có SĐT phụ huynh"
+                : $"Phụ huynh: {member.Profile.GuardianPhone}")
+            : (string.IsNullOrWhiteSpace(member.Profile.Phone)
+                ? "Chưa có số điện thoại"
+                : member.Profile.Phone)));
+        textChildren.Add(UiKit.Caption(
+            member.Account.IsActive ? "Đang hoạt động" : "Account đã khóa",
+            member.Account.IsActive ? UiKit.Success : UiKit.Danger));
         var text = new VerticalStackLayout
         {
             Spacing = 2,
-            VerticalOptions = LayoutOptions.Center,
-            Children =
-            {
-                UiKit.Headline(member.DisplayName),
-                UiKit.Caption($"@{member.Account.Username} · {DomainText.Role(member.Account.Role)}"),
-                member.Account.Role == UserRole.Coach
-                    ? UiKit.Caption(CoachPositionCatalog.Label(member.Profile.CoachPosition), UiKit.Primary)
-                    : UiKit.Caption(string.Empty),
-                UiKit.Caption(member.Account.Role == UserRole.Trainee
-                    ? (string.IsNullOrWhiteSpace(member.Profile.GuardianPhone)
-                        ? "Chưa có SĐT phụ huynh"
-                        : $"Phụ huynh: {member.Profile.GuardianPhone}")
-                    : (string.IsNullOrWhiteSpace(member.Profile.Phone)
-                        ? "Chưa có số điện thoại"
-                        : member.Profile.Phone)),
-                UiKit.Caption(
-                    member.Account.IsActive ? "Đang hoạt động" : "Account đã khóa",
-                    member.Account.IsActive ? UiKit.Success : UiKit.Danger)
-            }
+            VerticalOptions = LayoutOptions.Center
         };
+        foreach (var child in textChildren)
+        {
+            text.Children.Add(child);
+        }
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
 
@@ -269,6 +300,32 @@ public sealed class MemberRoleListPage : AsyncContentPage
         SemanticProperties.SetHint(card, "Nhấn hai lần để xem hồ sơ");
         return card;
     }
+
+    private View CreateTraineeTuitionStatus(MemberRow member)
+    {
+        if (member.Account.Role != UserRole.Trainee)
+        {
+            return UiKit.Caption(string.Empty);
+        }
+
+        if (member.Account.IsTuitionSupported)
+        {
+            return UiKit.Caption(
+                DomainText.SupportedTraineeTuitionLabel,
+                UiKit.Success);
+        }
+
+        if (_traineeTuition.TryGetValue(member.Account.Id, out var summary))
+        {
+            return UiKit.Caption(
+                $"Đã học {summary.PaidCycles} chu kỳ · {summary.AttendedSessions} buổi",
+                UiKit.Primary);
+        }
+
+        return UiKit.Caption("Chưa đóng học phí", UiKit.TextSecondary);
+    }
+
+    private sealed record TraineeTuitionSummary(int PaidCycles, int AttendedSessions);
 
     private static string RoleTitle(UserRole role) =>
         role == UserRole.Coach ? "Huấn Luyện Viên" : "Cầu Thủ Học Viên";

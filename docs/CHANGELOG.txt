@@ -1,5 +1,13 @@
 # Change log
 
+Release 3.0 - build 106 - 2026-08-16
+
+- Danh sách Cầu thủ học viên của Founder hiển thị ngay dưới tên account: Cầu thủ được hỗ trợ miễn phí, hoặc số chu kỳ đã học và tổng số buổi đã học.
+- Trang Lương Huấn Luyện Viên chỉ còn tổng lương và danh sách Coach; chạm vào từng Coach để mở trang chi tiết các kỳ lương, lớp học, trạng thái và ghi chú.
+- Khi Founder đánh dấu một kỳ lương đã thanh toán, Worker/D1 tự tạo box kỳ lương kế tiếp cho Coach; màn hình chi tiết tải lại ngay để hiển thị.
+- Giữ nguyên dữ liệu và binding D1/R2 production.
+- Tăng Android build lên 106; artifact cũ không bị ghi đè.
+
 Release 3.0 - build 105 - 2026-08-16
 
 - Chuyển Lịch sử đánh giá học viên của Cầu thủ học viên từ trang Hôm nay sang trang Hồ sơ, đặt ngay dưới Lịch sử điểm danh.

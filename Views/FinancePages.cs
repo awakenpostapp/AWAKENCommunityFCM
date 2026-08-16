@@ -725,7 +725,7 @@ public sealed class FounderSalaryManagementPage : AsyncContentPage
         AppDatabase database,
         SessionService session,
         string period)
-        : base(session, "Lương Huấn Luyện Viên")
+        : base(session, string.Empty)
     {
         _database = database;
         _period = period;
@@ -742,17 +742,13 @@ public sealed class FounderSalaryManagementPage : AsyncContentPage
             Children =
             {
                 UiKit.OfflineBanner(),
-                UiKit.Caption(
-                    $"{DomainText.Period(_period)} · Lương = số check-in đã xác nhận × mức lương/buổi đã đặt trong Lớp Học."),
                 UiKit.Card(new VerticalStackLayout
                 {
                     Spacing = 3,
                     Children =
                     {
                         UiKit.Caption("TỔNG LƯƠNG ĐÃ TÍNH"),
-                        UiKit.Title(UiKit.Money(total)),
-                        UiKit.Caption(
-                            $"{salaries.Count(item => item.Salary.Status == SalaryStatus.Pending)} khoản chưa thanh toán")
+                        UiKit.Title(UiKit.Money(total))
                     }
                 })
             }
@@ -766,9 +762,119 @@ public sealed class FounderSalaryManagementPage : AsyncContentPage
         }
         else
         {
-            foreach (var row in salaries)
+            foreach (var group in salaries
+                         .GroupBy(item => item.Salary.CoachUserId)
+                         .OrderBy(item => item.First().CoachName, StringComparer.OrdinalIgnoreCase))
             {
-                root.Children.Add(CreateSalaryCard(row));
+                root.Children.Add(CreateCoachCard(group.ToList()));
+            }
+        }
+
+        Content = UiKit.KeyboardAwareScroll(root);
+    }
+
+    private View CreateCoachCard(IReadOnlyList<SalaryRow> rows)
+    {
+        var first = rows[0];
+        var paidCount = rows.Count(item => item.Salary.Status == SalaryStatus.Paid);
+        var status = paidCount == rows.Count
+            ? "Đã thanh toán"
+            : paidCount == 0
+                ? "Chưa thanh toán"
+                : $"{paidCount}/{rows.Count} kỳ đã thanh toán";
+        var arrow = UiKit.Body("›", UiKit.TextSecondary);
+        arrow.FontSize = 24;
+        arrow.VerticalTextAlignment = TextAlignment.Center;
+        var grid = new Grid
+        {
+            ColumnSpacing = 10,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            }
+        };
+        grid.Children.Add(new VerticalStackLayout
+        {
+            Spacing = 4,
+            Children =
+            {
+                UiKit.Headline(first.CoachName),
+                UiKit.Caption(CoachPositionCatalog.Label(first.CoachPosition), UiKit.Primary),
+                UiKit.Caption($"{rows.Count} kỳ lương · {status}", UiKit.TextSecondary),
+                UiKit.StatusBadge(UiKit.Money(rows.Sum(item => item.Salary.AmountVnd)), UiKit.Success)
+            }
+        });
+        Grid.SetColumn(arrow, 1);
+        grid.Children.Add(arrow);
+
+        var card = UiKit.Card(grid, new Thickness(12));
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) => await PushPageAsync(
+            new FounderCoachSalaryDetailPage(
+                _database,
+                Session,
+                first.Salary.CoachUserId,
+                _period));
+        card.GestureRecognizers.Add(tap);
+        SemanticProperties.SetDescription(card, $"Xem chi tiết lương của {first.CoachName}");
+        SemanticProperties.SetHint(card, "Chạm để mở chi tiết");
+        return card;
+    }
+}
+
+public sealed class FounderCoachSalaryDetailPage : AsyncContentPage
+{
+    private readonly AppDatabase _database;
+    private readonly string _coachUserId;
+    private readonly string _period;
+
+    public FounderCoachSalaryDetailPage(
+        AppDatabase database,
+        SessionService session,
+        string coachUserId,
+        string period)
+        : base(session, string.Empty)
+    {
+        _database = database;
+        _coachUserId = coachUserId;
+        _period = period;
+    }
+
+    protected override async Task LoadAsync()
+    {
+        var salaries = (await _database.GetSalariesAsync(CurrentUserId))
+            .Where(item => item.Salary.CoachUserId == _coachUserId)
+            .OrderByDescending(item => item.Salary.Period)
+            .ToList();
+        var coachName = salaries.FirstOrDefault()?.CoachName ?? "Huấn luyện viên";
+        var currentPeriod = salaries
+            .Where(item => item.Salary.Period == _period)
+            .Sum(item => item.Salary.AmountVnd);
+        var root = new VerticalStackLayout
+        {
+            Padding = UiKit.PagePadding,
+            Spacing = UiKit.SectionSpacing,
+            Children =
+            {
+                UiKit.OfflineBanner(),
+                UiKit.LargeTitle(coachName),
+                UiKit.Caption($"{DomainText.Period(_period)} · {UiKit.Money(currentPeriod)}", UiKit.TextSecondary)
+            }
+        };
+
+        if (salaries.Count == 0)
+        {
+            root.Children.Add(UiKit.EmptyState(
+                "Chưa có kỳ lương",
+                "Kỳ lương sẽ được tạo sau khi Coach có check-in được xác nhận."));
+        }
+        else
+        {
+            root.Children.Add(UiKit.Caption("Lịch sử các kỳ lương của Huấn luyện viên", UiKit.TextSecondary));
+            foreach (var salary in salaries)
+            {
+                root.Children.Add(CreateSalaryCard(salary));
             }
         }
 
@@ -814,17 +920,17 @@ public sealed class FounderSalaryManagementPage : AsyncContentPage
                 save,
                 "Đã cập nhật kỳ lương.");
 
-        var stack = new VerticalStackLayout
+        return UiKit.Card(new VerticalStackLayout
         {
             Spacing = 7,
             Children =
             {
-                UiKit.Headline(row.CoachName),
+                UiKit.Headline(DomainText.Period(row.Salary.Period)),
                 UiKit.Caption(CoachPositionCatalog.Label(row.CoachPosition), UiKit.Primary),
                 UiKit.Caption($"Lớp học: {row.ClassName}"),
-                UiKit.Caption($"{DomainText.Period(row.Salary.Period)} · Hạn thanh toán {row.Salary.DueDate:dd/MM/yyyy}"),
+                UiKit.Caption($"Hạn thanh toán {row.Salary.DueDate:dd/MM/yyyy}"),
                 UiKit.Title(UiKit.Money(row.Salary.AmountVnd)),
-                UiKit.Caption("Số lương tự động tính từ các check-in đã được Founder xác nhận."),
+                UiKit.Caption("Tính từ các check-in đã được Founder xác nhận."),
                 UiKit.StatusBadge(
                     DomainText.Salary(row.Salary.Status),
                     isPaid
@@ -838,8 +944,7 @@ public sealed class FounderSalaryManagementPage : AsyncContentPage
                 UiKit.LabeledField("GHI CHÚ", notes),
                 save
             }
-        };
-        return UiKit.Card(stack);
+        });
     }
 }
 
