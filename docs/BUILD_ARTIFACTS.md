@@ -5,6 +5,8 @@
 | File | Purpose | SHA-256 |
 |---|---|---|
 | \`AWAKENCommunityFCM-v3.0-build106-Release.apk\` | Signed online Release APK (latest; upload to GitHub Release) | \`698FDDD4D7F2C632E38A18F6FFE79BCC18E66A2F3254D772FEB1DB666DC326CF\` |
+| \`AWAKENCommunityFCM-v3.0-build106-Release.aab\` | Signed Release Android App Bundle (local; not uploaded to GitHub) | \`22DAC68863784C3D0F2E497BDEA03F0AADA5913A9A7FDA30BA1544B2A6F620C9\` |
+| \`AWAKENCommunityFCM-v3.0-build106-Debug.apk\` | Debug APK (local; not uploaded to GitHub) | \`64EFECF6858CBBBE95D4732F26B8219FB3500B4096A5B3F9E16F93A5F9D76DDA\` |
 
 ## Release 3.0 — build 105
 
