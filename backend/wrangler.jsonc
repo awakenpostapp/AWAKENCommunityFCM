@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "community-football-club-manager-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "APP_API_VERSION": "2.4.0",
+    "ACCESS_TOKEN_TTL_SECONDS": "900",
+    "REFRESH_TOKEN_TTL_DAYS": "30",
+    "MAX_UPLOAD_BYTES": "10485760",
+    "ALLOWED_ORIGINS": "",
+    "ALLOW_PUBLIC_FOUNDER_REGISTRATION": "true",
+    "OAUTH_CALLBACK_URL": "https://community-football-club-manager-api.old-mud-b712.workers.dev/v1/auth/oauth/callback"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "community-football-club-manager",
+      "database_id": "8bcd4ffb-d801-4d51-b607-5f0031b6cf6e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "community-football-club-manager-files"
+    }
+  ]
+}

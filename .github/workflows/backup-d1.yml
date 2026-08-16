@@ -1,0 +1,36 @@
+name: D1 backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 2 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Export production D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          mkdir -p ../backups/ci
+          npx wrangler d1 export community-football-club-manager --remote --output ../backups/ci/community-football-club-manager-${{ github.run_id }}.sql
+          sha256sum ../backups/ci/*.sql > ../backups/ci/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: d1-backup-${{ github.run_id }}
+          path: backups/ci
+          retention-days: 30

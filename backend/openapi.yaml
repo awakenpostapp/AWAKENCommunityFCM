@@ -1,0 +1,164 @@
+openapi: 3.1.0
+info:
+  title: AWAKEN Community FCM API
+  version: 3.0.0
+servers:
+  - url: https://REPLACE_WITH_WORKER_DOMAIN
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      responses:
+        "200": { description: Worker and D1 health }
+  /v1/setup/admin:
+    post:
+      security: []
+      parameters:
+        - in: header
+          name: X-Bootstrap-Secret
+          required: true
+          schema: { type: string }
+      responses:
+        "201": { description: Admin created }
+        "409": { description: Admin already exists }
+  /v1/auth/register-founder:
+    post:
+      security: []
+      responses:
+        "201": { description: Founder, tenant and session created }
+  /v1/auth/login:
+    post:
+      security: []
+      responses:
+        "200":
+          description: Auth tokens and active user bundle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+  /v1/auth/refresh:
+    post:
+      security: []
+      responses:
+        "200":
+          description: Rotated tokens and user bundle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+  /v1/auth/logout:
+    post:
+      responses:
+        "204": { description: Session revoked }
+  /v1/auth/me:
+    get:
+      responses:
+        "200": { description: Current user, profile and active club }
+  /v1/admin/founders:
+    get:
+      responses:
+        "200": { description: Founder accounts }
+    post:
+      responses:
+        "201": { description: Founder and tenant created }
+  /v1/admin/founders/{founderId}/password:
+    patch:
+      parameters:
+        - $ref: "#/components/parameters/FounderId"
+      responses:
+        "204": { description: Password reset and sessions revoked }
+  /v1/admin/founders/{founderId}:
+    delete:
+      parameters:
+        - $ref: "#/components/parameters/FounderId"
+      responses:
+        "204": { description: Founder and tenant soft-deleted }
+  /v1/sync/snapshot:
+    get:
+      responses:
+        "200":
+          description: Role-filtered tenant snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Snapshot" }
+    put:
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string, maxLength: 120 }
+      responses:
+        "200":
+          description: Batch applied; body contains applied boolean and appliedCount integer
+        "403": { description: Collection not allowed for current role }
+        "422": { description: Sensitive collection requires a dedicated route }
+  /v1/uploads:
+    post:
+      parameters:
+        - in: query
+          name: purpose
+          required: true
+          schema:
+            type: string
+            enum: [avatar, club_logo, checkin_selfie, checkout_selfie, payment_proof, receipt]
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+          application/pdf: { schema: { type: string, format: binary } }
+      responses:
+        "201": { description: Private R2 object stored }
+        "503": { description: R2 binding unavailable }
+  /v1/uploads/{uploadId}:
+    get:
+      parameters:
+        - in: path
+          name: uploadId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Authorized private object stream }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    FounderId:
+      in: path
+      name: founderId
+      required: true
+      schema: { type: string }
+  schemas:
+    AuthResponse:
+      type: object
+      required: [accessToken, refreshToken, accessTokenExpiresAtUtc, refreshTokenExpiresAtUtc, sessionId, user]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer }
+        accessTokenExpiresAtUtc: { type: string, format: date-time }
+        refreshTokenExpiresAtUtc: { type: string, format: date-time }
+        sessionId: { type: string }
+        user: { type: object }
+        profile: { type: [object, "null"] }
+        activeClub: { type: [object, "null"] }
+        club: { type: [object, "null"] }
+    Snapshot:
+      type: object
+      required: [syncVersion, serverTime, role, currentUser, users, profiles, classes, notifications]
+      properties:
+        syncVersion: { type: integer, const: 1 }
+        serverTime: { type: string, format: date-time }
+        role: { type: string, enum: [founder, coach, trainee] }
+        currentUser: { type: object }
+        currentProfile: { type: [object, "null"] }
+        activeClub: { type: [object, "null"] }
+        club: { type: [object, "null"] }
+        users: { type: array, items: { type: object } }
+        profiles: { type: array, items: { type: object } }
+        classes: { type: array, items: { type: object } }
+        notifications: { type: array, items: { type: object } }

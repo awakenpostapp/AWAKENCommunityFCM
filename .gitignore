@@ -1,0 +1,41 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.apk
+*.aab
+*.keystore
+*.jks
+*.db3
+*.db3-shm
+*.db3-wal
+artifacts/
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+.dev.vars
+client_secret*.json
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Generated tooling and deployment state
+node_modules/
+dist/
+coverage/
+.wrangler/
+.wrangler-config/
+backend/.tools/
+*.log
+
+# Local backups and QA evidence that may contain account information
+backups/
+.codex-backups/
+.codex-build*/
+test-evidence/
+docs/screenshots/
+docs/QA_TEST_ACCOUNTS.*

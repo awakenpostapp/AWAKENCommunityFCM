@@ -1,0 +1,9 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+# Generate each value with a cryptographically secure random generator.
+JWT_SECRET=replace-with-at-least-32-random-bytes
+ADMIN_BOOTSTRAP_SECRET=replace-with-a-different-long-random-secret
+
+# Optional Google OAuth credentials. Configure real values as Worker secrets
+# before enabling Google login or Bind Account in production.
+GOOGLE_OAUTH_CLIENT_ID=replace-with-google-client-id
+GOOGLE_OAUTH_CLIENT_SECRET=replace-with-google-client-secret

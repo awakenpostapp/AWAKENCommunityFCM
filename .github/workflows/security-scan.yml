@@ -1,0 +1,21 @@
+name: Secret scan
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 2 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan source for credentials
+        shell: pwsh
+        run: ./scripts/Scan-Secrets.ps1

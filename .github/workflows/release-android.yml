@@ -1,0 +1,50 @@
+name: Android release artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration'
+        required: true
+        default: Release
+        type: choice
+        options: [Release, Debug]
+
+permissions:
+  contents: read
+
+jobs:
+  artifacts:
+    runs-on: windows-latest
+    env:
+      COMMUNITY_FOOTBALL_KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+      COMMUNITY_FOOTBALL_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      COMMUNITY_FOOTBALL_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet workload install maui-android
+      - run: dotnet restore CommunityFootballClubManager.csproj
+      - name: Restore signing keystore when configured
+        if: ${{ inputs.configuration == 'Release' }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANDROID_KEYSTORE_BASE64)) { throw 'ANDROID_KEYSTORE_BASE64 secret is required for Release.' }
+          [IO.File]::WriteAllBytes('community-release.keystore', [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+          "COMMUNITY_FOOTBALL_KEYSTORE_PATH=$((Resolve-Path community-release.keystore).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build APK
+        shell: pwsh
+        run: ./scripts/Build-AndroidArtifact.ps1 -Configuration '${{ inputs.configuration }}'
+      - name: Build AAB
+        if: ${{ inputs.configuration == 'Release' }}
+        shell: pwsh
+        run: ./scripts/Build-AndroidArtifact.ps1 -Configuration Release -Bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: awaken-community-fcm-${{ inputs.configuration }}-${{ github.run_number }}
+          path: artifacts/AWAKENCommunityFCM-*
+          if-no-files-found: error
+          retention-days: 30
