@@ -32,6 +32,7 @@ import {
   AUTO_ABSENT_REVIEW_NOTE,
   CHECKIN_LOCK_AFTER_END_MINUTES,
   CHECKIN_OPEN_LEAD_MINUTES,
+  FOUNDER_NO_ATTENDANCE_REVIEW_NOTE,
   FOUNDER_SUBSTITUTED_COACH_REVIEW_NOTE,
   MAX_OPEN_CHECKIN_SECONDS,
   applySnapshot,
@@ -1252,8 +1253,18 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
   requireRole(auth, "coach", "founder");
   const body = await readJson<JsonObject>(request);
   const submit = body.submit === true;
+  const founderNoAttendance = auth.role === "founder" && body.founderNoAttendance === true;
   if (body.submit !== undefined && typeof body.submit !== "boolean") {
     throw new ApiError(400, "validation_error", "submit phải là boolean.");
+  }
+  if (body.founderNoAttendance !== undefined && typeof body.founderNoAttendance !== "boolean") {
+    throw new ApiError(400, "validation_error", "founderNoAttendance phải là boolean.");
+  }
+  if (founderNoAttendance && !submit) {
+    throw new ApiError(400, "validation_error", "Trạng thái Coach không dạy chỉ được xác nhận khi hoàn tất buổi.");
+  }
+  if (founderNoAttendance && body.coachTaughtManually === true) {
+    throw new ApiError(400, "validation_error", "Chỉ được chọn một trạng thái dạy cho buổi học cũ.");
   }
 
   // "Điểm danh hoàn tất" is a separate state from Coach check-out.  Before
@@ -1266,15 +1277,33 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
     ).bind(actualSessionId, tenantId).first<{ class_id: string; created_at: string }>();
     if (!session) throw new ApiError(404, "not_found", "Không tìm thấy buổi học.");
     const incoming = body.records;
-    if (!Array.isArray(incoming)) {
+    if (!founderNoAttendance && !Array.isArray(incoming)) {
       throw new ApiError(400, "validation_error", "records phải là một mảng object.");
+    }
+    if (founderNoAttendance) {
+      const existing = await env.DB.prepare(
+        `SELECT checkin_selfie_object_key, checkout_selfie_object_key
+           FROM coach_checkins WHERE tenant_id=? AND session_id=?`,
+      ).bind(tenantId, actualSessionId).all<{ checkin_selfie_object_key: string; checkout_selfie_object_key: string }>();
+      if (existing.results.some((row) => row.checkin_selfie_object_key || row.checkout_selfie_object_key)) {
+        throw new ApiError(
+          409,
+          "real_checkin_exists",
+          "Không thể chọn Coach không dạy vì buổi này đã có ảnh check-in/check-out thật.",
+        );
+      }
+    }
+    if (founderNoAttendance) {
+      if (auth.role === "founder" && !optionalText(body.overrideReason, "overrideReason", 500)) {
+        throw new ApiError(400, "override_reason_required", "Founder cần nhập lý do khi điểm danh thay.");
+      }
     }
     const expected = await allRows<{ trainee_user_id: string }>(env.DB.prepare(
       `SELECT trainee_user_id FROM class_enrollments
        WHERE tenant_id=? AND class_id=? AND is_active=1 AND enrolled_at<=?`,
     ).bind(tenantId, session.class_id, session.created_at));
     const incomingIds = new Set<string>();
-    for (const item of incoming) {
+    for (const item of (founderNoAttendance ? [] : (incoming as unknown[]))) {
       if (!item || typeof item !== "object" || Array.isArray(item)) {
         throw new ApiError(400, "validation_error", "records phải là một mảng object.");
       }
@@ -1286,15 +1315,17 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       }
       incomingIds.add(traineeId);
     }
-    const missing = expected.some((row) => !incomingIds.has(row.trainee_user_id));
-    if (missing || incomingIds.size !== expected.length) {
+    const missing = !founderNoAttendance && expected.some((row) => !incomingIds.has(row.trainee_user_id));
+    if (!founderNoAttendance && (missing || incomingIds.size !== expected.length)) {
       throw new ApiError(400, "attendance_incomplete", "Vui lòng ghi nhận trạng thái cho tất cả học viên.");
     }
     if (auth.role === "founder" && !optionalText(body.overrideReason, "overrideReason", 500)) {
       throw new ApiError(400, "override_reason_required", "Founder cần nhập lý do khi điểm danh thay.");
     }
   }
-  const result = await applySnapshot(env, auth, { attendanceRecords: body.records ?? [] });
+  const result = founderNoAttendance
+    ? { applied: false, appliedCount: 0, serverTime: nowIso(), syncVersion: 1 }
+    : await applySnapshot(env, auth, { attendanceRecords: body.records ?? [] });
   if (submit) {
     const now = nowIso();
     const rawOverrideReason = auth.role === "founder"
@@ -1302,16 +1333,37 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       : "";
     const coachTaughtManually = auth.role === "founder" && body.coachTaughtManually === true;
     const overrideReason = auth.role === "founder"
-      ? coachTaughtManually
+      ? founderNoAttendance
+        ? `${rawOverrideReason} · Coach không dạy (Founder không điểm danh dạy)`
+        : coachTaughtManually
         ? `${rawOverrideReason} · Founder ghi nhận buổi học cũ; Coach đã dạy`
         : `${rawOverrideReason} · Coach không dạy; Founder điểm danh thay Coach`
       : "";
-    await env.DB.prepare(
-      `UPDATE training_sessions SET status='submitted', submitted_by_user_id=?, submitted_at=?, updated_at=?,
-       override_reason=? WHERE id=? AND tenant_id=?`,
-    ).bind(auth.id, now, now, overrideReason, actualSessionId, tenantId).run();
+    if (founderNoAttendance) {
+      // This is an explicit historical “not taught” outcome: no trainee
+      // attendance and no payable/synthetic Coach check-in may remain.
+      await env.DB.batch([
+        env.DB.prepare(
+          "DELETE FROM attendance_records WHERE tenant_id=? AND session_id=?",
+        ).bind(tenantId, actualSessionId),
+        env.DB.prepare(
+          "DELETE FROM coach_checkins WHERE tenant_id=? AND session_id=?",
+        ).bind(tenantId, actualSessionId),
+        env.DB.prepare(
+          `UPDATE training_sessions SET status='draft', submitted_by_user_id=NULL,
+           submitted_at=NULL, updated_at=?, override_reason=?
+           WHERE id=? AND tenant_id=?`,
+        ).bind(now, overrideReason, actualSessionId, tenantId),
+      ]);
+    }
+    else {
+      await env.DB.prepare(
+        `UPDATE training_sessions SET status='submitted', submitted_by_user_id=?, submitted_at=?, updated_at=?,
+         override_reason=? WHERE id=? AND tenant_id=?`,
+      ).bind(auth.id, now, now, overrideReason, actualSessionId, tenantId).run();
+    }
 
-    if (auth.role === "founder" && !coachTaughtManually) {
+    if (auth.role === "founder" && !coachTaughtManually && !founderNoAttendance) {
       // A Founder can deliver the class when the assigned Coach did not.
       // Keep an explicit, non-payable history row so the class remains
       // completed while the Coach timeline records “Coach không dạy”.
@@ -1480,7 +1532,9 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       }
     }
 
-    const incoming = Array.isArray(body.records) ? body.records : [];
+    const incoming = founderNoAttendance
+      ? []
+      : (Array.isArray(body.records) ? body.records : []);
     const statusText: Record<string, string> = {
       present: "Có mặt",
       late: "Đi trễ",
@@ -1523,6 +1577,8 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
     {
       submit,
       coachTaughtManually: auth.role === "founder" && body.coachTaughtManually === true,
+      founderNoAttendance,
+      founderNoAttendanceMarker: founderNoAttendance ? FOUNDER_NO_ATTENDANCE_REVIEW_NOTE : "",
       overrideReason: auth.role === "founder" ? optionalText(body.overrideReason, "overrideReason", 500) : "",
     });
   return json(result);

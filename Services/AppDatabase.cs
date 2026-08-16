@@ -3715,8 +3715,10 @@ public sealed partial class AppDatabase
             // A historical/locked session must use the attendance records
             // captured for that session, not today's current enrollment.  A
             // trainee added later must never appear in an older class history.
-            var onlineIds = historicalSnapshot
-                || onlineSession.Status is SessionStatus.Submitted or SessionStatus.Locked
+            var useOnlineSessionRecords = (historicalSnapshot
+                                           || onlineSession.Status is SessionStatus.Submitted or SessionStatus.Locked)
+                                          && !CoachCheckInTime.IsFounderNoAttendance(onlineSession);
+            var onlineIds = useOnlineSessionRecords
                 ? onlineRecords.Keys.ToHashSet()
                 : onlineEnrollments.Select(item => item.TraineeUserId)
                     .Concat(onlineRecords.Keys)
@@ -3760,8 +3762,10 @@ public sealed partial class AppDatabase
             .ToListAsync();
         var recordMap = records.ToDictionary(item => item.TraineeUserId);
 
-        var traineeIds = historicalSnapshot
-            || session.Status is SessionStatus.Submitted or SessionStatus.Locked
+        var useSessionRecords = (historicalSnapshot
+                                 || session.Status is SessionStatus.Submitted or SessionStatus.Locked)
+                                && !CoachCheckInTime.IsFounderNoAttendance(session);
+        var traineeIds = useSessionRecords
             ? records.Select(item => item.TraineeUserId).ToHashSet()
             : enrollments.Select(item => item.TraineeUserId)
                 .Concat(records.Select(item => item.TraineeUserId))
@@ -3801,6 +3805,16 @@ public sealed partial class AppDatabase
             : $"{trimmed} · {suffix}";
     }
 
+    private static string FounderNoAttendanceReason(string reason)
+    {
+        var trimmed = reason.Trim();
+        return trimmed.Contains(
+                   CoachCheckInTime.FounderNoAttendanceMarker,
+                   StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"{trimmed} · {CoachCheckInTime.FounderNoAttendanceMarker}";
+    }
+
     private static string FounderManualTaughtReason(string reason)
     {
         var trimmed = reason.Trim();
@@ -3816,8 +3830,14 @@ public sealed partial class AppDatabase
         IEnumerable<AttendanceRosterItem> roster,
         bool submit,
         string overrideReason,
-        bool founderCoachTaughtManually = false)
+        bool founderCoachTaughtManually = false,
+        bool founderNoAttendance = false)
     {
+        if (founderCoachTaughtManually && founderNoAttendance)
+        {
+            throw new InvalidOperationException("Chỉ được chọn một trạng thái dạy cho buổi học cũ.");
+        }
+
         if (IsOnline)
         {
             var onlineActor = await RequireOnlineUserAsync(actorUserId);
@@ -3836,17 +3856,20 @@ public sealed partial class AppDatabase
             if (onlineActor.Role == UserRole.Founder && submit && string.IsNullOrWhiteSpace(overrideReason))
                 throw new InvalidOperationException("Founder cần nhập lý do khi điểm danh thay.");
             var storedOverrideReason = onlineActor.Role == UserRole.Founder && submit
-                ? founderCoachTaughtManually
-                    ? FounderManualTaughtReason(overrideReason)
-                    : FounderSubstitutionReason(overrideReason)
+                ? founderNoAttendance
+                    ? FounderNoAttendanceReason(overrideReason)
+                    : founderCoachTaughtManually
+                        ? FounderManualTaughtReason(overrideReason)
+                        : FounderSubstitutionReason(overrideReason)
                 : onlineActor.Role == UserRole.Founder
                     ? overrideReason.Trim()
                     : string.Empty;
             var onlineItems = roster.ToList();
-            if (submit && onlineItems.Any(item => item.Status == AttendanceStatus.Unmarked))
+            if (submit && !founderNoAttendance
+                && onlineItems.Any(item => item.Status == AttendanceStatus.Unmarked))
                 throw new InvalidOperationException("Vui lòng ghi nhận trạng thái cho tất cả học viên.");
             var onlineRecords = new List<AttendanceRecord>();
-            foreach (var item in onlineItems)
+            foreach (var item in founderNoAttendance ? [] : onlineItems)
             {
                 var record = Online.AttendanceRecords.FirstOrDefault(value =>
                     value.SessionId == sessionId && value.TraineeUserId == item.TraineeUserId);
@@ -3887,8 +3910,14 @@ public sealed partial class AppDatabase
                             revision = record.Revision
                         }).ToArray(),
                         submit,
-                        overrideReason = storedOverrideReason,
-                        coachTaughtManually = founderCoachTaughtManually
+                        // The Worker owns the canonical historical marker. Do
+                        // not send the already-suffixed local display text or
+                        // each reload would append the marker again.
+                        overrideReason = onlineActor.Role == UserRole.Founder && submit
+                            ? overrideReason.Trim()
+                            : storedOverrideReason,
+                        coachTaughtManually = founderCoachTaughtManually,
+                        founderNoAttendance
                     },
                     EntityId.New());
             }
@@ -3896,6 +3925,12 @@ public sealed partial class AppDatabase
             {
                 throw CloudOperationException(exception);
             }
+            if (founderNoAttendance)
+            {
+                await ReloadOnlineSnapshotAsync();
+                return;
+            }
+
             foreach (var record in onlineRecords)
                 Online.Upsert(Online.AttendanceRecords, record, value => value.Id == record.Id);
             onlineSession.Status = submit ? SessionStatus.Submitted : SessionStatus.Draft;
@@ -3937,12 +3972,11 @@ public sealed partial class AppDatabase
                     Online.Upsert(Online.CoachCheckIns, substituted, value => value.Id == substituted.Id);
                 }
             }
-            else if (submit && onlineActor.Role == UserRole.Founder && founderCoachTaughtManually)
+            else if (submit && onlineActor.Role == UserRole.Founder)
             {
-                // The Worker creates the payable historical Coach rows in the
-                // same attendance transaction.  Reload the projection so the
-                // Founder immediately sees the generated salary/check-in data
-                // instead of waiting for the next snapshot refresh.
+                // The Worker derives historical Coach rows/salary in the same
+                // attendance transaction. Reload both modes so a transition
+                // from manual to Founder substitution also removes stale pay.
                 await ReloadOnlineSnapshotAsync();
             }
             return;
@@ -3964,9 +3998,11 @@ public sealed partial class AppDatabase
             throw new InvalidOperationException("Founder cần nhập lý do khi điểm danh thay.");
         }
         var storedLocalOverrideReason = actor.Role == UserRole.Founder && submit
-            ? founderCoachTaughtManually
-                ? FounderManualTaughtReason(overrideReason)
-                : FounderSubstitutionReason(overrideReason)
+            ? founderNoAttendance
+                ? FounderNoAttendanceReason(overrideReason)
+                : founderCoachTaughtManually
+                    ? FounderManualTaughtReason(overrideReason)
+                    : FounderSubstitutionReason(overrideReason)
             : actor.Role == UserRole.Founder
                 ? overrideReason.Trim()
                 : session.OverrideReason;
@@ -3982,9 +4018,85 @@ public sealed partial class AppDatabase
         }
 
         var items = roster.ToList();
-        if (submit && items.Any(item => item.Status == AttendanceStatus.Unmarked))
+        if (submit && !founderNoAttendance
+            && items.Any(item => item.Status == AttendanceStatus.Unmarked))
         {
             throw new InvalidOperationException("Vui lòng ghi nhận trạng thái cho tất cả học viên.");
+        }
+
+        if (submit && founderNoAttendance)
+        {
+            var existingCheckIns = await Database.Table<CoachCheckIn>()
+                .Where(item => item.SessionId == session.Id)
+                .ToListAsync();
+            if (existingCheckIns.Any(item => !string.IsNullOrWhiteSpace(item.SelfiePath)
+                                             || !string.IsNullOrWhiteSpace(item.CheckOutSelfiePath)))
+            {
+                throw new InvalidOperationException(
+                    "Không thể chọn Coach không dạy vì buổi này đã có ảnh check-in/check-out thật.");
+            }
+
+            var oldRecords = await Database.Table<AttendanceRecord>()
+                .Where(item => item.SessionId == session.Id)
+                .ToListAsync();
+            var removableCheckIns = existingCheckIns
+                .Where(item => CoachCheckInTime.IsFounderManualTaught(item)
+                               || CoachCheckInTime.IsFounderSubstitution(item)
+                               || string.IsNullOrWhiteSpace(item.SelfiePath))
+                .ToList();
+
+            session.Status = SessionStatus.Draft;
+            session.SubmittedByUserId = string.Empty;
+            session.SubmittedAtUtc = null;
+            session.OverrideReason = storedLocalOverrideReason;
+            session.UpdatedAtUtc = DateTime.UtcNow;
+            await Database.RunInTransactionAsync(connection =>
+            {
+                foreach (var record in oldRecords)
+                {
+                    connection.Delete(record);
+                }
+
+                foreach (var checkIn in removableCheckIns)
+                {
+                    connection.Delete(checkIn);
+                }
+
+                connection.Update(session);
+            });
+
+            var pendingSalaries = await Database.Table<CoachSalary>()
+                .Where(item => item.Status == SalaryStatus.Pending)
+                .ToListAsync();
+            foreach (var salary in pendingSalaries)
+            {
+                await RecomputePendingSalaryAsync(salary);
+            }
+
+            if (_cloudOptions.IsConfigured)
+            {
+                await _cloudApi.PutAsync<object>(
+                    $"attendance/{Uri.EscapeDataString(session.Id)}",
+                    new
+                    {
+                        records = Array.Empty<object>(),
+                        submit = true,
+                        overrideReason,
+                        coachTaughtManually = false,
+                        founderNoAttendance = true
+                    },
+                    EntityId.New());
+            }
+
+            await AddAuditAsync(
+                actorUserId,
+                "SubmitAttendance",
+                nameof(TrainingSession),
+                session.Id,
+                storedLocalOverrideReason,
+                writeCloud: !_cloudOptions.IsConfigured);
+            QueueCloudProjectionRefresh();
+            return;
         }
 
         var recordsToInsert = new List<AttendanceRecord>();
@@ -4173,6 +4285,21 @@ public sealed partial class AppDatabase
             await EnsureCoachSalaryForPeriodAsync(coachUserId, session.SessionDate);
         }
 
+        if (submit && actor.Role == UserRole.Founder && !founderCoachTaughtManually)
+        {
+            // Switching a previously manual historical session to Founder
+            // substitution must remove its pending salary contribution. The
+            // salary total is derived from payable check-ins, so recomputing
+            // pending rows is safer than subtracting a guessed rate.
+            var pendingSalaries = await Database.Table<CoachSalary>()
+                .Where(item => item.Status == SalaryStatus.Pending)
+                .ToListAsync();
+            foreach (var salary in pendingSalaries)
+            {
+                await RecomputePendingSalaryAsync(salary);
+            }
+        }
+
         if (_cloudOptions.IsConfigured)
         {
             var cloudRecords = recordsToInsert
@@ -4200,7 +4327,8 @@ public sealed partial class AppDatabase
                         overrideReason = actor.Role == UserRole.Founder
                             ? overrideReason.Trim()
                             : string.Empty,
-                        coachTaughtManually = founderCoachTaughtManually
+                        coachTaughtManually = founderCoachTaughtManually,
+                        founderNoAttendance = false
                     },
                     EntityId.New());
             }

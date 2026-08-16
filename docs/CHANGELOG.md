@@ -1,5 +1,27 @@
 # Change log
 
+## Release 3.0 — build 111 — 2026-08-17
+
+- Giữ nguyên toàn bộ sửa lỗi trạng thái lịch cũ và chu kỳ học phí của build 110;
+  bổ sung hiển thị trực tiếp **Coach không dạy** trên màn hình chỉnh sửa buổi
+  học để không nhầm với trạng thái đang điểm danh.
+- Android build tăng lên 111; artifact build 110 và các bản cũ không bị ghi đè.
+
+## Release 3.0 — build 110 — 2026-08-17
+
+- Bổ sung trạng thái lịch cũ **Coach không dạy (Founder không điểm danh dạy)**.
+  Trạng thái này không tạo điểm danh học viên và không tính lương Coach; trạng
+  thái **Coach không dạy (Founder điểm danh thay)** vẫn ghi nhận điểm danh học
+  viên nhưng không tính lương Coach.
+- Lưu lại lựa chọn trạng thái lịch cũ khi mở lại, không tự trả về
+  **Đã dạy (ghi nhận thủ công)**. Khi chuyển giữa các trạng thái, dữ liệu điểm
+  danh/check-in tổng hợp và lương đang chờ được dọn hoặc tính lại idempotent.
+- Khóa chuyển sang chu kỳ học phí mới cho đến khi chu kỳ trước hoàn tất đủ số
+  buổi (vắng mặt cũng được tính là buổi đã diễn ra); danh sách Founder chỉ hiện
+  thao tác đóng chu kỳ mới khi invoice chu kỳ mới đã được tạo.
+- Worker production cập nhật tenant-safe, giữ nguyên D1, R2, secrets và biến
+  production hiện có. Android build tăng lên 110; artifact cũ không bị ghi đè.
+
 ## Release 3.0 — build 109 — 2026-08-17
 
 - Sửa lỗi 500 khi Founder cập nhật trạng thái lớp học cũ thành **Đã dạy

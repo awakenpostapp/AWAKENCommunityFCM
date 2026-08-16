@@ -1,5 +1,21 @@
 # Android build artifacts
 
+## Release 3.0 — build 111
+
+| File | Purpose | SHA-256 |
+|---|---|---|
+| `AWAKENCommunityFCM-v3.0-build111-Release.apk` | Signed online Release APK (latest; upload to GitHub Release) | `58CE77E640536083EE804CE01E863C5746C3002325DBA0701CF6495AE86ACE4E` |
+| `AWAKENCommunityFCM-v3.0-build111-Release.aab` | Signed Release Android App Bundle (local; not uploaded to GitHub) | `70C325ACA84D595D0662B6D16BBFA18CD0D2CDD860CC17E22B250E1A553BBCC8` |
+| `AWAKENCommunityFCM-v3.0-build111-Debug.apk` | Debug APK (local; not uploaded to GitHub) | `04F13901CB66227EFAD09AC5D5F290D12D5471529A916D1FA1A5D228969F9341` |
+
+## Release 3.0 — build 110
+
+| File | Purpose | SHA-256 |
+|---|---|---|
+| `AWAKENCommunityFCM-v3.0-build110-Release.apk` | Signed online Release APK (latest; upload to GitHub Release) | `5B6F9EB221697F86CB523086C3B9AF06ECF6009F20044F5CAADA5009394ED348` |
+| `AWAKENCommunityFCM-v3.0-build110-Release.aab` | Signed Release Android App Bundle (local; not uploaded to GitHub) | `D57C78E1A30644AFAAC8B5880761784A1EAA048896071048657357895A613959` |
+| `AWAKENCommunityFCM-v3.0-build110-Debug.apk` | Debug APK (local; not uploaded to GitHub) | `9F41F9111FCBECC35D75E5D7EEBDCD43F13B9E8156FD9B6666E0BE0FE7F26441` |
+
 ## Release 3.0 — build 109
 
 | File | Purpose | SHA-256 |

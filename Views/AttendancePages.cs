@@ -158,10 +158,14 @@ public sealed class AttendancePage : AsyncContentPage
                 UiKit.LargeTitle(_classRow.Class.Name),
                 UiKit.Caption($"{_date:dddd, dd/MM/yyyy} · {_classRow.ScheduleText}"),
                 UiKit.StatusBadge(
-                    _trainingSession.Status == SessionStatus.Submitted
+                    CoachCheckInTime.IsFounderNoAttendance(_trainingSession)
+                        ? "Coach không dạy"
+                        : _trainingSession.Status == SessionStatus.Submitted
                         ? "Đã hoàn tất · Có thể sửa người đi trễ"
                         : "Đang điểm danh",
-                    _trainingSession.Status == SessionStatus.Submitted
+                    CoachCheckInTime.IsFounderNoAttendance(_trainingSession)
+                        ? UiKit.Danger
+                        : _trainingSession.Status == SessionStatus.Submitted
                         ? UiKit.Success
                         : UiKit.Warning)
             }
@@ -177,9 +181,10 @@ public sealed class AttendancePage : AsyncContentPage
                     ItemsSource = new[]
                     {
                         "Đã dạy (ghi nhận thủ công)",
-                        "Coach không dạy (Founder điểm danh thay)"
+                        "Coach không dạy (Founder điểm danh thay)",
+                        "Coach không dạy (Founder không điểm danh dạy)"
                     },
-                    SelectedIndex = 0
+                    SelectedIndex = FounderModeIndex(_trainingSession.OverrideReason)
                 };
                 root.Children.Add(UiKit.Card(new VerticalStackLayout
                 {
@@ -188,7 +193,7 @@ public sealed class AttendancePage : AsyncContentPage
                     {
                         UiKit.Headline("Trạng thái buổi học cũ"),
                         UiKit.Caption(
-                            "Dùng cho lớp đã diễn ra trước khi đưa vào phần mềm. Chọn Coach đã dạy để tính buổi và lương; chọn Coach không dạy nếu Founder điểm danh thay."),
+                            "Dùng cho lớp đã diễn ra trước khi đưa vào phần mềm. Chọn Coach đã dạy để tính lương; chọn Founder điểm danh thay để tính điểm danh nhưng không tính lương; chọn không điểm danh để bỏ cả hai."),
                         UiKit.LabeledField("TRẠNG THÁI", _founderModePicker)
                     }
                 }));
@@ -331,13 +336,17 @@ public sealed class AttendancePage : AsyncContentPage
 
     private async Task SubmitAsync(string overrideReason, Button button)
     {
+        var founderNoAttendance = _historicalMode
+                                  && _founderModePicker?.SelectedIndex == 2;
         if (_historicalMode && string.IsNullOrWhiteSpace(overrideReason))
         {
             overrideReason = "Bổ sung buổi học cũ theo lịch lớp";
         }
-        var unmarked = _statusPickers
-            .Where(pair => pair.Picker.SelectedIndex == (int)AttendanceStatus.Unmarked)
-            .ToList();
+        var unmarked = founderNoAttendance
+            ? []
+            : _statusPickers
+                .Where(pair => pair.Picker.SelectedIndex == (int)AttendanceStatus.Unmarked)
+                .ToList();
         if (unmarked.Count > 0)
         {
             var convert = await DisplayAlertAsync(
@@ -391,9 +400,33 @@ public sealed class AttendancePage : AsyncContentPage
                 submit,
                 overrideReason,
                 founderCoachTaughtManually: _historicalMode
-                    && _founderModePicker?.SelectedIndex == 0),
+                    && _founderModePicker?.SelectedIndex == 0,
+                founderNoAttendance: _historicalMode
+                    && _founderModePicker?.SelectedIndex == 2),
             button,
             submit ? "Đã hoàn tất điểm danh." : "Đã lưu bản nháp.");
+    }
+
+    private static int FounderModeIndex(string? overrideReason)
+    {
+        if (overrideReason?.Contains(
+                CoachCheckInTime.FounderNoAttendanceMarker,
+                StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 2;
+        }
+
+        if (overrideReason?.Contains(
+                "Founder điểm danh thay Coach",
+                StringComparison.OrdinalIgnoreCase) == true
+            || overrideReason?.Contains(
+                CoachCheckInTime.FounderSubstitutedCoachReviewNote,
+                StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 1;
+        }
+
+        return 0;
     }
 }
 

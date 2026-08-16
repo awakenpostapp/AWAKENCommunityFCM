@@ -7,6 +7,12 @@ public static class CoachCheckInTime
     public const string AutoAbsentReviewNote = "AUTO_ABSENT_NO_CHECKIN";
     public const string FounderSubstitutedCoachReviewNote = "FOUNDER_SUBSTITUTED_COACH";
     /// <summary>
+    /// Marker for an old class that was not taught and was not backfilled by
+    /// the Founder.  It deliberately has no attendance records or payable
+    /// Coach check-in row.
+    /// </summary>
+    public const string FounderNoAttendanceMarker = "Coach không dạy (Founder không điểm danh dạy)";
+    /// <summary>
     /// Marker used when a Founder backfills a completed historical lesson.
     /// These rows have no selfies because the Coach was not using the app yet,
     /// but they are still payable teaching sessions.
@@ -56,6 +62,11 @@ public static class CoachCheckInTime
 
     public static bool IsFounderSubstitution(CoachCheckIn checkIn) =>
         string.Equals(checkIn.ReviewNote, FounderSubstitutedCoachReviewNote, StringComparison.Ordinal);
+
+    public static bool IsFounderNoAttendance(TrainingSession session) =>
+        session.OverrideReason.Contains(
+            FounderNoAttendanceMarker,
+            StringComparison.OrdinalIgnoreCase);
 
     public static DateTime ScheduledStartLocal(TrainingClass trainingClass, DateTime sessionDate) =>
         DateTime.SpecifyKind(

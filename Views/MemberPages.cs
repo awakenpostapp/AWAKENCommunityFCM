@@ -582,32 +582,55 @@ public sealed class MemberProfilePage : AsyncContentPage
         var enrollmentIds = officialEnrollments
             .Select(item => item.Id)
             .ToHashSet(StringComparer.Ordinal);
-        var invoices = (await _database.GetInvoicesAsync(CurrentUserId))
+        var invoiceRows = (await _database.GetInvoicesAsync(CurrentUserId))
             .Where(item => item.Invoice.TraineeUserId == member.Account.Id
                            && enrollmentIds.Contains(item.Invoice.EnrollmentId))
-            .GroupBy(item => item.Invoice.EnrollmentId)
-            .Select(group => group
-                .OrderByDescending(item => item.Invoice.CycleNumber)
-                .First())
             .ToList();
 
         // Show the action only for an unpaid/new cycle. A paid cycle hides it
         // until its full attendance is delivered and the next cycle exists.
         foreach (var enrollment in officialEnrollments)
         {
-            var latest = invoices.FirstOrDefault(item =>
-                item.Invoice.EnrollmentId == enrollment.Id);
+            var enrollmentInvoices = invoiceRows
+                .Where(item => item.Invoice.EnrollmentId == enrollment.Id)
+                .OrderBy(item => item.Invoice.CycleNumber)
+                .ToList();
+            var latest = enrollmentInvoices.LastOrDefault();
             if (latest is null)
             {
                 return true;
             }
 
+            // Cycle 2+ is valid only after every preceding paid cycle is
+            // complete. This guards the Founder list against a stale/partial
+            // invoice projection and prevents showing a new payment action
+            // before the old cycle's planned sessions are delivered.
+            if (latest.Invoice.CycleNumber > 1
+                && enrollmentInvoices
+                    .Where(item => item.Invoice.CycleNumber < latest.Invoice.CycleNumber)
+                    .Any(item => item.Invoice.Status != InvoiceStatus.Paid
+                                 || !item.Progress.IsComplete))
+            {
+                continue;
+            }
+
             if (latest.Invoice.Status == InvoiceStatus.Paid)
             {
-                // A paid cycle stays hidden whether it is still in progress
-                // or has just completed. The next maintenance pass creates a
-                // new pending invoice; only that next cycle can show the
-                // parent-payment action again.
+                // A paid cycle stays hidden while it is still being delivered
+                // and after completion until maintenance has created the next
+                // cycle. This prevents the parent-payment action from showing
+                // twice for the same cycle and makes the next action advance
+                // only after all planned sessions (including absences) are
+                // recorded.
+                if (!latest.Progress.IsComplete)
+                {
+                    continue;
+                }
+
+                // The next pending invoice, when present, is selected as
+                // `latest` on the following iteration/read and will make the
+                // action visible again. Do not expose a duplicate action while
+                // the server is still deriving that invoice.
                 continue;
             }
 
