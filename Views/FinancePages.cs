@@ -567,6 +567,15 @@ public sealed class FounderInvoiceListPage : AsyncContentPage
                 UiKit.Caption($"Tiến độ: {row.Progress.AttendedSessions}/{row.Progress.PlannedSessions} buổi")
             }
         };
+        // A direct Founder/parent confirmation intentionally has no payment
+        // proof. Keep that source visible in the paid list instead of making
+        // it look like a normal trainee-uploaded bill.
+        if (row.Invoice.Status == InvoiceStatus.Paid && row.LatestProof is null)
+        {
+            stack.Children.Add(UiKit.StatusBadge(
+                "Đã đóng học phí thay Phụ huynh",
+                UiKit.Success));
+        }
         if (row.Progress.NeedsPaymentWarning)
         {
             stack.Children.Add(UiKit.StatusBadge(
@@ -1542,6 +1551,48 @@ public sealed class FounderParentTuitionPage : AsyncContentPage
                 UiKit.Danger));
         }
 
+        if (row.Invoice.Status is not (InvoiceStatus.Paid or InvoiceStatus.ProofSubmitted))
+        {
+            var cyclePicker = new Picker
+            {
+                Title = "Chọn số chu kỳ",
+                ItemsSource = Enumerable.Range(1, 12)
+                    .Select(item => $"{item} chu kỳ")
+                    .ToList(),
+                SelectedIndex = Math.Clamp(row.Invoice.CycleCount, 1, 12) - 1
+            };
+            stack.Children.Add(UiKit.LabeledField(
+                "ĐÓNG TRƯỚC BAO NHIÊU CHU KỲ",
+                cyclePicker,
+                "Số tiền sẽ tự tính: học phí một chu kỳ × số chu kỳ."));
+            cyclePicker.SelectedIndexChanged += async (_, _) =>
+            {
+                if (cyclePicker.SelectedIndex < 0)
+                {
+                    return;
+                }
+
+                cyclePicker.IsEnabled = false;
+                try
+                {
+                    await _database.SetInvoiceCycleCountByFounderAsync(
+                        CurrentUserId,
+                        row.Invoice.Id,
+                        cyclePicker.SelectedIndex + 1);
+                    await ReloadAsync();
+                }
+                catch (Exception exception)
+                {
+                    await DisplayAlertAsync("Chưa thể cập nhật", exception.Message, "Đóng");
+                    cyclePicker.SelectedIndex = Math.Clamp(row.Invoice.CycleCount, 1, 12) - 1;
+                }
+                finally
+                {
+                    cyclePicker.IsEnabled = true;
+                }
+            };
+        }
+
         if (string.IsNullOrWhiteSpace(club.BankBin)
             || string.IsNullOrWhiteSpace(club.BankAccountNumber))
         {
@@ -1592,10 +1643,27 @@ public sealed class FounderParentTuitionPage : AsyncContentPage
                     "Hủy");
                 if (!accepted) return;
 
-                await RunActionAsync(
-                    () => _database.ConfirmTuitionByFounderAsync(CurrentUserId, row.Invoice.Id),
-                    confirm,
-                    "Đã xác nhận học phí và tạo hóa đơn cho học viên.");
+                confirm.IsEnabled = false;
+                try
+                {
+                    await _database.ConfirmTuitionByFounderAsync(CurrentUserId, row.Invoice.Id);
+                    await DisplayAlertAsync(
+                        "Đã xác nhận",
+                        "Đã đóng học phí thay Phụ huynh và tạo hóa đơn cho học viên.",
+                        "OK");
+                    // Return to the Trainee profile. Its OnAppearing reloads
+                    // the authoritative projection, hides this action for the
+                    // paid cycle, and places the invoice in “Học viên đã đóng”.
+                    await Navigation.PopAsync();
+                }
+                catch (Exception exception)
+                {
+                    await DisplayAlertAsync("Chưa thể thực hiện", UserMessage(exception), "Đóng");
+                }
+                finally
+                {
+                    confirm.IsEnabled = true;
+                }
             };
             stack.Children.Add(confirm);
         }

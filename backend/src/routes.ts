@@ -1500,10 +1500,22 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
     if (notificationStatements.length > 0) {
       await env.DB.batch(notificationStatements);
     }
-    // Attendance submission changes cycle progress immediately.  Recompute
+    // Attendance submission changes cycle progress immediately. Recompute
     // the invoice, second-lesson warning and next-cycle reminder before the
     // client refreshes its snapshot instead of waiting for the hourly cron.
-    await runTenantMaintenance(env, tenantId);
+    // Maintenance is derived/retryable work: a legacy row or concurrent cron
+    // must not turn an already-written attendance submission into a 500.
+    try {
+      await runTenantMaintenance(env, tenantId);
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        event: "attendance_maintenance_failed",
+        tenantId,
+        sessionId: actualSessionId,
+        error: String(error),
+      }));
+    }
   }
   await audit(env, tenantId, auth.id,
     submit ? "attendance.submitted" : "attendance.draft_saved",
@@ -2083,13 +2095,17 @@ export async function confirmParentPayment(
   const invoice = await env.DB.prepare(
     `SELECT ti.*, c.team_name, cl.name AS class_name, p.full_name AS trainee_name,
             fp.full_name AS founder_name, u.is_tuition_supported
-       FROM tuition_invoices ti
-       JOIN clubs c ON c.tenant_id=ti.tenant_id
-       JOIN classes cl ON cl.id=ti.class_id AND cl.tenant_id=ti.tenant_id
-       JOIN profiles p ON p.user_id=ti.trainee_user_id AND p.tenant_id=ti.tenant_id
-       JOIN profiles fp ON fp.user_id=? AND fp.tenant_id=ti.tenant_id
-       JOIN users u ON u.id=ti.trainee_user_id AND u.tenant_id=ti.tenant_id
-      WHERE ti.id=? AND ti.tenant_id=? LIMIT 1`,
+      FROM tuition_invoices ti
+      JOIN clubs c ON c.tenant_id=ti.tenant_id
+      JOIN classes cl ON cl.id=ti.class_id AND cl.tenant_id=ti.tenant_id
+      JOIN class_enrollments ce
+        ON ce.id=ti.enrollment_id AND ce.tenant_id=ti.tenant_id
+       AND ce.class_id=ti.class_id AND ce.trainee_user_id=ti.trainee_user_id
+       AND ce.is_active=1 AND ce.is_trial=0
+      JOIN profiles p ON p.user_id=ti.trainee_user_id AND p.tenant_id=ti.tenant_id
+      JOIN profiles fp ON fp.user_id=? AND fp.tenant_id=ti.tenant_id
+      JOIN users u ON u.id=ti.trainee_user_id AND u.tenant_id=ti.tenant_id
+      WHERE ti.id=? AND ti.tenant_id=? AND cl.is_active=1 LIMIT 1`,
   ).bind(auth.id, invoiceId, tenantId).first<Record<string, unknown>>();
   if (!invoice) throw new ApiError(404, "not_found", "Không tìm thấy khoản học phí.");
   if (Number(invoice.is_tuition_supported ?? 0) === 1) {
@@ -2158,6 +2174,21 @@ export async function confirmParentPayment(
     receiptId,
     receiptNumber,
   });
+  // If the paid cycle was already fully delivered, create the next pending
+  // cycle immediately. This keeps the Founder profile accurate without
+  // waiting for the hourly cron; a maintenance failure is retryable and must
+  // not undo the confirmed transfer.
+  try {
+    await runTenantMaintenance(env, tenantId);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "parent_payment_maintenance_failed",
+      tenantId,
+      invoiceId,
+      error: String(error),
+    }));
+  }
   return json({
     invoiceId,
     accepted: true,
@@ -2225,13 +2256,16 @@ export async function paymentProofImage(
 
 export async function updateInvoiceCycles(request: Request, env: Env, invoiceId: string): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "trainee");
+  requireRole(auth, "trainee", "founder");
   const tenantId = requireTenant(auth);
+  const ownerClause = auth.role === "trainee" ? " AND ti.trainee_user_id=?" : "";
   const invoice = await env.DB.prepare(
     `SELECT ti.*, c.tuition_session_count FROM tuition_invoices ti
      JOIN classes c ON c.id=ti.class_id AND c.tenant_id=ti.tenant_id
-     WHERE ti.id=? AND ti.tenant_id=? AND ti.trainee_user_id=? LIMIT 1`,
-  ).bind(invoiceId, tenantId, auth.id).first<Record<string, unknown>>();
+     WHERE ti.id=? AND ti.tenant_id=?${ownerClause} LIMIT 1`,
+  ).bind(...(auth.role === "trainee"
+    ? [invoiceId, tenantId, auth.id]
+    : [invoiceId, tenantId])).first<Record<string, unknown>>();
   if (!invoice) throw new ApiError(404, "not_found", "Không tìm thấy khoản học phí.");
   if (invoice.status === "paid" || invoice.status === "proof_submitted") {
     throw new ApiError(409, "invoice_locked", "Khoản học phí đã gửi bill hoặc đã thanh toán.");
@@ -2243,11 +2277,19 @@ export async function updateInvoiceCycles(request: Request, env: Env, invoiceId:
   const amount = cycleFee * cycleCount;
   const planned = plannedPerCycle * cycleCount;
   const now = nowIso();
+  const updateOwnerClause = auth.role === "trainee" ? " AND trainee_user_id=?" : "";
   await env.DB.prepare(
     `UPDATE tuition_invoices SET cycle_count=?, amount_vnd=?, planned_session_count=?, updated_at=?
-     WHERE id=? AND tenant_id=? AND trainee_user_id=?`,
-  ).bind(cycleCount, amount, planned, now, invoiceId, tenantId, auth.id).run();
-  await audit(env, tenantId, auth.id, "tuition.prepaid_cycles_changed", "tuition_invoice", invoiceId,
+     WHERE id=? AND tenant_id=?${updateOwnerClause}`,
+  ).bind(...(auth.role === "trainee"
+    ? [cycleCount, amount, planned, now, invoiceId, tenantId, auth.id]
+    : [cycleCount, amount, planned, now, invoiceId, tenantId])).run();
+  await audit(env, tenantId, auth.id,
+    auth.role === "founder"
+      ? "tuition.prepaid_cycles_changed_by_founder"
+      : "tuition.prepaid_cycles_changed",
+    "tuition_invoice",
+    invoiceId,
     { cycleCount, amount });
   return json({ cycleCount, amountVnd: amount, plannedSessionCount: planned });
 }

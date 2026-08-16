@@ -6472,6 +6472,150 @@ public sealed partial class AppDatabase
             $"{cycleCount} chu kỳ · {invoice.AmountVnd:N0} VNĐ");
     }
 
+    /// <summary>
+    /// Founder-side equivalent of the Trainee prepaid-cycle selector.  The
+    /// Founder may prepare the same invoice before confirming a parent bank
+    /// transfer, but can never change an already-paid or bill-submitted cycle.
+    /// </summary>
+    public async Task SetInvoiceCycleCountByFounderAsync(
+        string actorUserId,
+        string invoiceId,
+        int cycleCount)
+    {
+        if (cycleCount is < 1 or > 12)
+        {
+            throw new InvalidOperationException("Số chu kỳ đóng trước phải từ 1 đến 12.");
+        }
+
+        if (IsOnline)
+        {
+            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            await EnsureOnlineSnapshotAsync();
+            var invoice = Online.Invoices.FirstOrDefault(item => item.Id == invoiceId)
+                          ?? throw new InvalidOperationException("Không tìm thấy học phí.");
+            var trainee = Online.User(invoice.TraineeUserId);
+            if (trainee?.IsTuitionSupported == true)
+            {
+                throw new InvalidOperationException(
+                    $"{DomainText.SupportedTraineeLabel} được miễn học phí.");
+            }
+
+            if (invoice.Status is InvoiceStatus.Paid or InvoiceStatus.ProofSubmitted)
+            {
+                throw new InvalidOperationException(
+                    "Khoản học phí đã gửi bill hoặc đã đóng không thể đổi số chu kỳ.");
+            }
+
+            var trainingClass = Online.Class(invoice.ClassId)
+                                ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
+            var enrollment = Online.ClassEnrollments.FirstOrDefault(item =>
+                item.Id == invoice.EnrollmentId && item.IsActive)
+                             ?? throw new InvalidOperationException("Không tìm thấy phân công lớp.");
+            var cycleFee = invoice.CycleFeeVnd > 0
+                ? invoice.CycleFeeVnd
+                : enrollment.CycleFeeVnd > 0
+                    ? enrollment.CycleFeeVnd
+                    : enrollment.MonthlyFeeVnd > 0
+                        ? enrollment.MonthlyFeeVnd
+                        : trainingClass.DefaultFeeVnd;
+            if (cycleFee <= 0)
+            {
+                throw new InvalidOperationException("Lớp chưa có học phí cho một chu kỳ.");
+            }
+
+            try
+            {
+                await _cloudApi.PatchAsync(
+                    $"tuition/invoices/{Uri.EscapeDataString(invoiceId)}/cycles",
+                    new { cycleCount },
+                    idempotencyKey: EntityId.New());
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
+
+            invoice.CycleCount = cycleCount;
+            invoice.CycleFeeVnd = cycleFee;
+            invoice.AmountVnd = CycleAmount(cycleFee, cycleCount);
+            invoice.PlannedSessionCount = checked(
+                Math.Max(1, trainingClass.TuitionSessionCount) * cycleCount);
+            invoice.AmountPerSessionVnd = (long)Math.Round(
+                cycleFee / (decimal)Math.Max(1, trainingClass.TuitionSessionCount),
+                MidpointRounding.AwayFromZero);
+            invoice.UpdatedAtUtc = DateTime.UtcNow;
+            return;
+        }
+
+        await InitializeAsync();
+        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var localInvoice = await Database.FindAsync<TuitionInvoice>(invoiceId)
+                           ?? throw new InvalidOperationException("Không tìm thấy học phí.");
+        var localTrainee = await Database.FindAsync<UserAccount>(localInvoice.TraineeUserId);
+        if (localTrainee?.IsTuitionSupported == true)
+        {
+            throw new InvalidOperationException(
+                $"{DomainText.SupportedTraineeLabel} được miễn học phí.");
+        }
+
+        if (localInvoice.Status is InvoiceStatus.Paid or InvoiceStatus.ProofSubmitted)
+        {
+            throw new InvalidOperationException(
+                "Khoản học phí đã gửi bill hoặc đã đóng không thể đổi số chu kỳ.");
+        }
+
+        var localClass = await Database.FindAsync<TrainingClass>(localInvoice.ClassId)
+                         ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
+        var localEnrollment = await Database.FindAsync<ClassEnrollment>(localInvoice.EnrollmentId)
+                              ?? throw new InvalidOperationException("Không tìm thấy phân công lớp.");
+        var localCycleFee = localInvoice.CycleFeeVnd > 0
+            ? localInvoice.CycleFeeVnd
+            : localEnrollment.CycleFeeVnd > 0
+                ? localEnrollment.CycleFeeVnd
+                : localEnrollment.MonthlyFeeVnd > 0
+                    ? localEnrollment.MonthlyFeeVnd
+                    : localClass.DefaultFeeVnd;
+        if (localCycleFee <= 0)
+        {
+            throw new InvalidOperationException("Lớp chưa có học phí cho một chu kỳ.");
+        }
+
+        localInvoice.CycleCount = cycleCount;
+        localInvoice.CycleFeeVnd = localCycleFee;
+        localInvoice.AmountVnd = CycleAmount(localCycleFee, cycleCount);
+        localInvoice.PlannedSessionCount = checked(
+            Math.Max(1, localClass.TuitionSessionCount) * cycleCount);
+        localInvoice.AmountPerSessionVnd = (long)Math.Round(
+            localCycleFee / (decimal)Math.Max(1, localClass.TuitionSessionCount),
+            MidpointRounding.AwayFromZero);
+
+        if (_cloudOptions.IsConfigured)
+        {
+            await EnsureCloudWriteReadyAsync(actorUserId);
+            try
+            {
+                await _cloudApi.PatchAsync(
+                    $"tuition/invoices/{Uri.EscapeDataString(invoiceId)}/cycles",
+                    new { cycleCount },
+                    idempotencyKey: EntityId.New());
+                await RefreshCloudProjectionAsync();
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
+        }
+
+        localInvoice.UpdatedAtUtc = DateTime.UtcNow;
+        await Database.UpdateAsync(localInvoice);
+        await AddAuditAsync(
+            actorUserId,
+            "UpdateTuitionPrepaidCyclesByFounder",
+            nameof(TuitionInvoice),
+            localInvoice.Id,
+            $"{cycleCount} chu kỳ · {localInvoice.AmountVnd:N0} VNĐ");
+    }
+
     public async Task SubmitPaymentProofAsync(
         string actorUserId,
         string invoiceId,

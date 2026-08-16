@@ -1,5 +1,14 @@
 # Change log
 
+Release 3.0 - build 109 - 2026-08-17
+
+- Sửa lỗi 500 khi Founder cập nhật trạng thái lớp học cũ thành “Đã dạy (ghi nhận thủ công)”. Phần điểm danh/lương được ghi trước; maintenance học phí là tác vụ có thể retry nên không còn làm thất bại thao tác đã lưu.
+- Làm idempotent việc tạo hóa đơn chu kỳ và ghi nhận Coach/lương để thao tác lặp lại hoặc chạy đồng thời không tạo bản ghi trùng.
+- Trang “Đóng học phí thay Phụ huynh” có chọn 1–12 chu kỳ, tính lại số tiền và số buổi như trang học phí Trainee. Backend chỉ cho Founder cập nhật invoice chưa thanh toán của phân công chính thức đang hoạt động; học thử và học viên được hỗ trợ bị chặn ở cả UI lẫn API.
+- Ẩn nút đóng thay phụ huynh khi chưa vào lớp chính thức, đang học thử, đã gửi bill hoặc đã đóng chu kỳ hiện tại; sau khi xác nhận sẽ quay lại hồ sơ và danh sách “Học viên đã đóng” hiển thị nhãn “Đã đóng học phí thay Phụ huynh”.
+- Tăng Android build lên 109; artifact cũ không bị ghi đè.
+
+Release 3.0 - build 107 - 2026-08-17
 Release 3.0 - build 107 - 2026-08-17
 
 - Founder có thể mở buổi học cũ và chọn “Đã dạy (Ghi nhận thủ công)”. Hệ thống tạo bản ghi Coach đã hoàn tất, tính một buổi lương và ghi rõ nguồn xác nhận; thao tác lặp lại không tạo trùng lương. Ngày trong tương lai chỉ mở chi tiết lớp, không mở màn hình điểm danh.

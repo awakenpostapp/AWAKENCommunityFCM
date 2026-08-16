@@ -495,6 +495,7 @@ public sealed class MemberProfilePage : AsyncContentPage
 
         if (Session.CurrentUser?.Role == UserRole.Founder
             && member.Account.Role == UserRole.Trainee
+            && await CanShowFounderParentPaymentAsync(member)
             && Application.Current?.Handler?.MauiContext?.Services is { } services)
         {
             var qrCode = services.GetService<QrCodeService>();
@@ -550,6 +551,75 @@ public sealed class MemberProfilePage : AsyncContentPage
         }
 
         Content = UiKit.KeyboardAwareScroll(root);
+    }
+
+    private async Task<bool> CanShowFounderParentPaymentAsync(MemberRow member)
+    {
+        if (member.Account.IsTuitionSupported)
+        {
+            return false;
+        }
+
+        var activeClasses = await _database.GetClassesAsync(CurrentUserId);
+        var enrollments = new List<ClassEnrollment>();
+        foreach (var classRow in activeClasses.Where(item => item.Class.IsActive))
+        {
+            enrollments.AddRange((await _database.GetClassEnrollmentsAsync(classRow.Class.Id))
+                .Where(item => item.TraineeUserId == member.Account.Id && item.IsActive));
+        }
+
+        var officialEnrollments = enrollments
+            .Where(item => !item.IsTrial)
+            .ToList();
+        if (officialEnrollments.Count == 0)
+        {
+            // Supported and trial-only Trainees must not see a parent-payment
+            // action. A trial becomes eligible automatically after the server
+            // converts it to an official enrollment and creates its invoice.
+            return false;
+        }
+
+        var enrollmentIds = officialEnrollments
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var invoices = (await _database.GetInvoicesAsync(CurrentUserId))
+            .Where(item => item.Invoice.TraineeUserId == member.Account.Id
+                           && enrollmentIds.Contains(item.Invoice.EnrollmentId))
+            .GroupBy(item => item.Invoice.EnrollmentId)
+            .Select(group => group
+                .OrderByDescending(item => item.Invoice.CycleNumber)
+                .First())
+            .ToList();
+
+        // Show the action only for an unpaid/new cycle. A paid cycle hides it
+        // until its full attendance is delivered and the next cycle exists.
+        foreach (var enrollment in officialEnrollments)
+        {
+            var latest = invoices.FirstOrDefault(item =>
+                item.Invoice.EnrollmentId == enrollment.Id);
+            if (latest is null)
+            {
+                return true;
+            }
+
+            if (latest.Invoice.Status == InvoiceStatus.Paid)
+            {
+                // A paid cycle stays hidden whether it is still in progress
+                // or has just completed. The next maintenance pass creates a
+                // new pending invoice; only that next cycle can show the
+                // parent-payment action again.
+                continue;
+            }
+
+            if (latest.Invoice.Status == InvoiceStatus.ProofSubmitted)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private static string Value(string value) =>

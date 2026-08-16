@@ -559,7 +559,8 @@ async function ensureInitialTuitionInvoices(env: Env, tenantId: string): Promise
        AND NOT EXISTS (
          SELECT 1 FROM tuition_invoices ti
          WHERE ti.enrollment_id = ce.id AND ti.cycle_number = 1
-       )`,
+       )
+     ON CONFLICT(enrollment_id, cycle_number) DO NOTHING`,
   ).bind(now, now, tenantId).run();
 }
 
@@ -724,7 +725,8 @@ async function ensureTuitionCycleProgress(env: Env, tenantId: string): Promise<v
              (id, tenant_id, enrollment_id, trainee_user_id, class_id, cycle_number,
               cycle_count, cycle_fee_vnd, amount_vnd, attended_session_count,
               planned_session_count, due_date, status, payment_content, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, 'pending', ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, 'pending', ?, ?, ?)
+             ON CONFLICT(enrollment_id, cycle_number) DO NOTHING`,
           ).bind(invoiceId, tenantId, enrollment.id, enrollment.trainee_user_id,
             enrollment.class_id, nextCycleNumber, fee, fee, perCycle, today,
             `${profile?.full_name || "Hoc vien"} dong hoc phi`, now, now),

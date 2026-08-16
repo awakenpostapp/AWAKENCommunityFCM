@@ -188,7 +188,7 @@ public sealed class AttendancePage : AsyncContentPage
                     {
                         UiKit.Headline("Trạng thái buổi học cũ"),
                         UiKit.Caption(
-                            "Dùng cho lớp đã diễn ra trước khi đưa vào phần mềm. Chỉ trạng thái Coach không dạy mới tạo lịch sử thay Coach."),
+                            "Dùng cho lớp đã diễn ra trước khi đưa vào phần mềm. Chọn Coach đã dạy để tính buổi và lương; chọn Coach không dạy nếu Founder điểm danh thay."),
                         UiKit.LabeledField("TRẠNG THÁI", _founderModePicker)
                     }
                 }));
