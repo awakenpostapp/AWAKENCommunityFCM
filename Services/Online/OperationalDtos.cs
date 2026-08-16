@@ -81,6 +81,11 @@ public sealed class CloudTraineeEvaluationResponse
     public CloudTraineeEvaluationSnapshot? Evaluation { get; init; }
 }
 
+public sealed class CloudEvaluationRequestResponse
+{
+    public bool EvaluationRequestOpen { get; init; }
+}
+
 public sealed class CloudTraineeEvaluationListResponse
 {
     public IReadOnlyList<CloudTraineeEvaluationSnapshot> Evaluations { get; init; } = [];

@@ -255,10 +255,20 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var trainingClass = Online.Class(classId)
                                 ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
-            trainingClass.EvaluationRequestOpen = isOpen;
-            trainingClass.UpdatedAtUtc = DateTime.UtcNow;
-            await PushOnlineDeltaAsync(actor, classes: new[] { trainingClass });
-            Online.Upsert(Online.Classes, trainingClass, item => item.Id == trainingClass.Id);
+            try
+            {
+                var response = await _cloudApi.PatchAsync<object, CloudEvaluationRequestResponse>(
+                    $"classes/{Uri.EscapeDataString(classId)}/evaluation-request",
+                    new { isOpen },
+                    EntityId.New());
+                trainingClass.EvaluationRequestOpen = response.EvaluationRequestOpen;
+                trainingClass.UpdatedAtUtc = DateTime.UtcNow;
+                Online.Upsert(Online.Classes, trainingClass, item => item.Id == trainingClass.Id);
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
             return;
         }
 
@@ -270,6 +280,10 @@ public sealed partial class AppDatabase
         localClass.EvaluationRequestOpen = isOpen;
         localClass.UpdatedAtUtc = DateTime.UtcNow;
         await Database.UpdateAsync(localClass);
+        if (isOpen)
+        {
+            await NotifyLocalEvaluationRequestOpenedAsync(localClass.Id, localClass.Name);
+        }
         await AddAuditAsync(actorUserId,
             isOpen ? "OpenTraineeEvaluationRequest" : "CloseTraineeEvaluationRequest",
             nameof(TrainingClass), classId, localClass.Name);
@@ -385,6 +399,7 @@ public sealed partial class AppDatabase
         }
         await AddAuditAsync(actorLocal.Id, existing is null ? "CreateTraineeEvaluation" : "UpdateTraineeEvaluation",
             nameof(TraineeEvaluation), savedLocal.Id, savedLocal.TraineeUserId);
+        await NotifyLocalEvaluationSubmittedAsync(savedLocal, localClass.Name, actorLocal.Id);
         return savedLocal;
     }
 
@@ -434,7 +449,128 @@ public sealed partial class AppDatabase
         await AddAuditAsync(founder.Id,
             approved ? "ApproveTraineeEvaluation" : "RejectTraineeEvaluation",
             nameof(TraineeEvaluation), evaluationId, current.ReviewNote);
+        await NotifyLocalEvaluationReviewedAsync(current, approved);
         return current;
+    }
+
+    private async Task NotifyLocalEvaluationRequestOpenedAsync(
+        string classId,
+        string className)
+    {
+        var coaches = await Database.Table<ClassCoachAssignment>()
+            .Where(item => item.ClassId == classId && item.IsActive)
+            .ToListAsync();
+        var users = (await Database.Table<UserAccount>().ToListAsync())
+            .Where(item => item.Role == UserRole.Coach && item.IsActive)
+            .ToDictionary(item => item.Id);
+        foreach (var assignment in coaches)
+        {
+            if (!users.ContainsKey(assignment.CoachUserId)
+                || await NotificationExistsAsync(
+                    assignment.CoachUserId,
+                    NotificationKind.EvaluationRequestOpened,
+                    classId))
+            {
+                continue;
+            }
+
+            await AddNotificationAsync(
+                assignment.CoachUserId,
+                NotificationKind.EvaluationRequestOpened,
+                "Mở yêu cầu đánh giá học viên",
+                $"Founder đã mở yêu cầu đánh giá cho lớp {className}. Vui lòng hoàn tất đánh giá các Cầu thủ học viên.",
+                classId);
+        }
+    }
+
+    private async Task NotifyLocalEvaluationSubmittedAsync(
+        TraineeEvaluation evaluation,
+        string className,
+        string coachUserId)
+    {
+        var profiles = (await Database.Table<PersonProfile>().ToListAsync())
+            .ToDictionary(item => item.UserId);
+        var traineeName = profiles.GetValueOrDefault(evaluation.TraineeUserId)?.FullName;
+        if (string.IsNullOrWhiteSpace(traineeName))
+        {
+            traineeName = "Cầu thủ học viên";
+        }
+
+        var coachName = profiles.GetValueOrDefault(coachUserId)?.FullName;
+        if (string.IsNullOrWhiteSpace(coachName))
+        {
+            coachName = "Huấn luyện viên";
+        }
+
+        var founders = (await Database.Table<UserAccount>().ToListAsync())
+            .Where(item => item.Role == UserRole.Founder && item.IsActive)
+            .ToList();
+        foreach (var founder in founders)
+        {
+            await AddNotificationAsync(
+                founder.Id,
+                NotificationKind.EvaluationSubmitted,
+                "Có đánh giá học viên cần xác nhận",
+                $"{coachName} đã gửi đánh giá cho {traineeName} trong lớp {className}. Vui lòng kiểm tra và xác nhận.",
+                evaluation.Id);
+        }
+
+        var total = await Database.Table<ClassEnrollment>()
+            .Where(item => item.ClassId == evaluation.ClassId && item.IsActive)
+            .CountAsync();
+        var completed = (await Database.Table<TraineeEvaluation>()
+                .Where(item => item.ClassId == evaluation.ClassId
+                               && item.CoachUserId == coachUserId
+                               && item.Status != TraineeEvaluationStatus.Rejected)
+                .ToListAsync())
+            .Select(item => item.TraineeUserId)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        if (total > 0 && completed >= total)
+        {
+            foreach (var founder in founders)
+            {
+                if (await NotificationExistsAsync(
+                        founder.Id,
+                        NotificationKind.EvaluationClassCompleted,
+                        evaluation.ClassId))
+                {
+                    continue;
+                }
+
+                await AddNotificationAsync(
+                    founder.Id,
+                    NotificationKind.EvaluationClassCompleted,
+                    "Coach đã đánh giá hoàn tất",
+                    $"{coachName} đã đánh giá đủ {total} Cầu thủ học viên trong lớp {className}. Cần Founder xác nhận tất cả.",
+                    evaluation.ClassId);
+            }
+        }
+    }
+
+    private async Task NotifyLocalEvaluationReviewedAsync(
+        TraineeEvaluation evaluation,
+        bool approved)
+    {
+        if (approved)
+        {
+            await AddNotificationAsync(
+                evaluation.TraineeUserId,
+                NotificationKind.EvaluationApproved,
+                "Đánh giá học viên đã được xác nhận",
+                "Founder đã xác nhận đánh giá học viên của bạn. Bạn có thể mở Lịch sử đánh giá để xem chi tiết.",
+                evaluation.Id);
+            return;
+        }
+
+        await AddNotificationAsync(
+            evaluation.CoachUserId,
+            NotificationKind.EvaluationRejected,
+            "Đánh giá cần chỉnh sửa",
+            string.IsNullOrWhiteSpace(evaluation.ReviewNote)
+                ? "Founder yêu cầu bạn kiểm tra và gửi lại đánh giá học viên."
+                : $"Founder yêu cầu chỉnh sửa đánh giá: {evaluation.ReviewNote}",
+            evaluation.Id);
     }
 
     private void CacheOnlineEvaluations(IEnumerable<TraineeEvaluationRow> rows)

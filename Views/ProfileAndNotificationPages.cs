@@ -10,7 +10,9 @@ public sealed class NotificationsPage : AsyncContentPage
     private readonly AppDatabase _database;
 
     public NotificationsPage(AppDatabase database, SessionService session)
-        : base(session, "Thông báo")
+        : base(session, session.CurrentUser?.Role == UserRole.Trainee
+            ? string.Empty
+            : "Thông báo")
     {
         _database = database;
     }
@@ -209,7 +211,9 @@ public sealed class ProfileHubPage : AsyncContentPage
         MediaService media,
         AppNavigator navigator,
         RememberedLoginService rememberedLogin)
-        : base(session, "Hồ sơ")
+        : base(session, session.CurrentUser?.Role == UserRole.Trainee
+            ? string.Empty
+            : "Hồ sơ")
     {
         _database = database;
         _media = media;
@@ -266,6 +270,16 @@ public sealed class ProfileHubPage : AsyncContentPage
                 async () => await Navigation.PushAsync(new AttendanceHistoryPage(
                     _database,
                     Session))));
+            root.Children.Add(MenuCard(
+                "Lịch sử đánh giá học viên",
+                "Xem các đánh giá Coach đã gửi và Founder xác nhận.",
+                async () => await Navigation.PushAsync(new TraineeEvaluationHistoryPage(
+                    _database,
+                    Session,
+                    CurrentUserId,
+                    Session.CurrentProfile?.FullName
+                        ?? Session.CurrentUser?.Username
+                        ?? "Cầu thủ học viên"))));
         }
         else if (role == UserRole.Coach)
         {

@@ -1,5 +1,20 @@
 # Change log
 
+## Release 3.0 — build 105 — 2026-08-16
+
+- Chuyển **Lịch sử đánh giá học viên** của Cầu thủ học viên từ trang Hôm nay
+  sang trang Hồ sơ, đặt ngay dưới Lịch sử điểm danh.
+- Bổ sung thông báo online theo tenant: Founder mở yêu cầu đánh giá sẽ báo
+  Coach; mỗi đánh giá Coach gửi sẽ báo Founder; khi Coach hoàn tất toàn bộ lớp
+  sẽ báo Founder cần xác nhận; Founder xác nhận sẽ báo Cầu thủ học viên.
+- Khi Founder từ chối đánh giá, Coach nhận thông báo yêu cầu chỉnh sửa; các
+  thông báo được lưu trong D1 và tải mới khi mở trang Thông báo.
+- Thêm endpoint Worker có kiểm tra quyền cho Founder mở/đóng yêu cầu đánh giá;
+  giữ nguyên D1, R2, secrets và biến production hiện có.
+- Các trang Hôm nay, Lịch học trong tháng, Học phí, Thông báo và Hồ sơ của
+  account Trainee không còn tiêu đề tab phía trên, nội dung được đẩy lên trên.
+- Tăng Android build lên `105`; artifact cũ không bị ghi đè.
+
 ## Release 3.0 — build 104 — 2026-08-16
 
 - Thay app icon bằng `AWAKEN_AppIcon_Light_1024.png` do người dùng cung cấp;

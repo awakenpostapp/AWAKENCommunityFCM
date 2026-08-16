@@ -92,7 +92,10 @@ public static class WeeklyScheduleView
             titleRow.Children.Add(createButton);
         }
 
-        section.Children.Add(titleRow);
+        if (role != UserRole.Trainee)
+        {
+            section.Children.Add(titleRow);
+        }
 
         if (scheduledClasses.Count == 0)
         {

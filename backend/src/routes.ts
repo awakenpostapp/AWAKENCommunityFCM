@@ -732,6 +732,168 @@ async function assertCoachCanEvaluate(
   if (!enrolled) throw new ApiError(404, "not_found", "Học viên không thuộc lớp này.");
 }
 
+async function activeUsersByRole(
+  env: Env,
+  tenantId: string,
+  role: "founder" | "coach" | "trainee",
+): Promise<Array<{ id: string }>> {
+  return allRows<{ id: string }>(env.DB.prepare(
+    "SELECT id FROM users WHERE tenant_id=? AND role=? AND is_active=1",
+  ).bind(tenantId, role));
+}
+
+function notificationInsertIfMissing(
+  env: Env,
+  tenantId: string,
+  recipientUserId: string,
+  kind: string,
+  title: string,
+  message: string,
+  relatedEntityId: string,
+  createdAt: string,
+) {
+  return env.DB.prepare(
+    `INSERT INTO notifications
+       (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM notifications
+         WHERE tenant_id=? AND recipient_user_id=? AND kind=? AND related_entity_id=?
+      )`,
+  ).bind(
+    newId(), tenantId, recipientUserId, kind, title, message, relatedEntityId, createdAt,
+    tenantId, recipientUserId, kind, relatedEntityId,
+  );
+}
+
+async function notifyEvaluationRequestOpened(
+  env: Env,
+  tenantId: string,
+  classId: string,
+  className: string,
+): Promise<void> {
+  const coaches = await allRows<{ id: string }>(env.DB.prepare(
+    `SELECT DISTINCT u.id
+       FROM users u
+       JOIN class_coaches cc
+         ON cc.tenant_id=u.tenant_id AND cc.coach_user_id=u.id AND cc.is_active=1
+      WHERE u.tenant_id=? AND u.role='coach' AND u.is_active=1 AND cc.class_id=?`,
+  ).bind(tenantId, classId));
+  if (coaches.length === 0) return;
+
+  const now = nowIso();
+  await env.DB.batch(coaches.map((coach) => notificationInsertIfMissing(
+    env,
+    tenantId,
+    coach.id,
+    "EvaluationRequestOpened",
+    "Mở yêu cầu đánh giá học viên",
+    `Founder đã mở yêu cầu đánh giá cho lớp ${className}. Vui lòng hoàn tất đánh giá các Cầu thủ học viên.`,
+    classId,
+    now,
+  )));
+}
+
+async function notifyEvaluationSubmitted(
+  env: Env,
+  tenantId: string,
+  row: EvaluationRow,
+): Promise<void> {
+  const founders = await activeUsersByRole(env, tenantId, "founder");
+  if (founders.length === 0) return;
+
+  // Include updated_at so a rejected evaluation that is corrected and sent
+  // again creates a fresh Founder notification.
+  const relatedEntityId = `${row.id}:${row.updated_at}`;
+  const now = nowIso();
+  await env.DB.batch(founders.map((founder) => env.DB.prepare(
+    `INSERT INTO notifications
+       (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    newId(), tenantId, founder.id, "EvaluationSubmitted",
+    "Có đánh giá học viên cần xác nhận",
+    `${row.coach_name ?? "Huấn luyện viên"} đã gửi đánh giá cho ${row.trainee_name ?? "Cầu thủ học viên"} trong lớp ${row.class_name ?? "Lớp học"}. Vui lòng kiểm tra và xác nhận.`,
+    relatedEntityId,
+    now,
+  )));
+}
+
+async function notifyEvaluationClassCompleted(
+  env: Env,
+  tenantId: string,
+  classId: string,
+  coachId: string,
+  className: string,
+  coachName: string,
+): Promise<void> {
+  const total = Number((await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM class_enrollments WHERE tenant_id=? AND class_id=? AND is_active=1",
+  ).bind(tenantId, classId).first<{ count: number }>())?.count ?? 0);
+  if (total === 0) return;
+
+  const completed = Number((await env.DB.prepare(
+    `SELECT COUNT(DISTINCT trainee_user_id) AS count
+       FROM trainee_evaluations
+      WHERE tenant_id=? AND class_id=? AND coach_user_id=? AND status IN ('pending','approved')`,
+  ).bind(tenantId, classId, coachId).first<{ count: number }>())?.count ?? 0);
+  if (completed < total) return;
+
+  const alreadySent = await env.DB.prepare(
+    `SELECT 1 FROM notifications
+      WHERE tenant_id=? AND kind='EvaluationClassCompleted' AND related_entity_id=? LIMIT 1`,
+  ).bind(tenantId, classId).first();
+  if (alreadySent) return;
+
+  const founders = await activeUsersByRole(env, tenantId, "founder");
+  if (founders.length === 0) return;
+  const now = nowIso();
+  await env.DB.batch(founders.map((founder) => env.DB.prepare(
+    `INSERT INTO notifications
+       (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    newId(), tenantId, founder.id, "EvaluationClassCompleted",
+    "Coach đã đánh giá hoàn tất",
+    `${coachName} đã đánh giá đủ ${total} Cầu thủ học viên trong lớp ${className}. Cần Founder xác nhận tất cả.`,
+    classId,
+    now,
+  )));
+}
+
+export async function evaluationRequest(
+  request: Request,
+  env: Env,
+  classId: string,
+): Promise<Response> {
+  const auth = await authenticate(request, env);
+  const tenantId = requireTenant(auth);
+  requireRole(auth, "founder");
+  const body = await readJson<JsonObject>(request);
+  if (typeof body.isOpen !== "boolean") {
+    throw new ApiError(400, "validation_error", "isOpen phải là boolean.");
+  }
+
+  const current = await env.DB.prepare(
+    "SELECT id, name, evaluation_request_open FROM classes WHERE tenant_id=? AND id=? LIMIT 1",
+  ).bind(tenantId, classId).first<{ id: string; name: string; evaluation_request_open: number }>();
+  if (!current) throw new ApiError(404, "not_found", "Không tìm thấy lớp học.");
+
+  const isOpen = body.isOpen;
+  const wasOpen = Number(current.evaluation_request_open ?? 0) === 1;
+  const now = nowIso();
+  await env.DB.prepare(
+    "UPDATE classes SET evaluation_request_open=?, updated_at=? WHERE tenant_id=? AND id=?",
+  ).bind(isOpen ? 1 : 0, now, tenantId, classId).run();
+  if (isOpen && !wasOpen) {
+    await notifyEvaluationRequestOpened(env, tenantId, classId, current.name);
+  }
+  await audit(env, tenantId, auth.id,
+    isOpen ? "trainee_evaluation.request_opened" : "trainee_evaluation.request_closed",
+    "class", classId, { className: current.name });
+  return json({ evaluationRequestOpen: isOpen });
+}
+
 export async function evaluations(request: Request, env: Env, evaluationId?: string): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
@@ -830,9 +992,19 @@ export async function evaluations(request: Request, env: Env, evaluationId?: str
       optionalText(body.notes, "notes", 2000),
       now, now,
     ).run();
+    const saved = await getEvaluationRow(env, tenantId, id);
+    await notifyEvaluationSubmitted(env, tenantId, saved);
+    await notifyEvaluationClassCompleted(
+      env,
+      tenantId,
+      classId,
+      auth.id,
+      saved.class_name ?? "Lớp học",
+      saved.coach_name ?? "Huấn luyện viên",
+    );
     await audit(env, tenantId, auth.id, "trainee_evaluation.created", "trainee_evaluation", id,
       { classId, traineeUserId: traineeId });
-    return json({ evaluation: evaluationJson(await getEvaluationRow(env, tenantId, id)) }, 201);
+    return json({ evaluation: evaluationJson(saved) }, 201);
   }
 
   if (!evaluationId) throw new ApiError(404, "not_found", "Không tìm thấy đánh giá học viên.");
@@ -868,8 +1040,18 @@ export async function evaluations(request: Request, env: Env, evaluationId?: str
       body.notes === undefined ? current.notes : optionalText(body.notes, "notes", 2000),
       now, evaluationId, tenantId,
     ).run();
+    const saved = await getEvaluationRow(env, tenantId, evaluationId);
+    await notifyEvaluationSubmitted(env, tenantId, saved);
+    await notifyEvaluationClassCompleted(
+      env,
+      tenantId,
+      saved.class_id,
+      auth.id,
+      saved.class_name ?? "Lớp học",
+      saved.coach_name ?? "Huấn luyện viên",
+    );
     await audit(env, tenantId, auth.id, "trainee_evaluation.updated", "trainee_evaluation", evaluationId);
-    return json({ evaluation: evaluationJson(await getEvaluationRow(env, tenantId, evaluationId)) });
+    return json({ evaluation: evaluationJson(saved) });
   }
 
   throw new ApiError(405, "method_not_allowed", "Phương thức không được hỗ trợ.");
@@ -969,10 +1151,39 @@ export async function reviewEvaluation(
     `UPDATE trainee_evaluations SET status=?, review_note=?, reviewed_by_user_id=?, reviewed_at=?, updated_at=?
      WHERE id=? AND tenant_id=?`,
   ).bind(status, optionalText(body.note, "note", 500), auth.id, now, now, evaluationId, tenantId).run();
+  const reviewed = await getEvaluationRow(env, tenantId, evaluationId);
+  if (body.approved) {
+    await env.DB.prepare(
+      `INSERT INTO notifications
+         (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      newId(), tenantId, reviewed.trainee_user_id, "EvaluationApproved",
+      "Đánh giá học viên đã được xác nhận",
+      `Founder đã xác nhận đánh giá của bạn trong lớp ${reviewed.class_name ?? "Lớp học"}. Bạn có thể mở Lịch sử đánh giá để xem chi tiết.`,
+      evaluationId,
+      now,
+    ).run();
+  } else {
+    const note = optionalText(body.note, "note", 500);
+    await env.DB.prepare(
+      `INSERT INTO notifications
+         (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      newId(), tenantId, reviewed.coach_user_id, "EvaluationRejected",
+      "Đánh giá cần chỉnh sửa",
+      note
+        ? `Founder yêu cầu chỉnh sửa đánh giá: ${note}`
+        : "Founder yêu cầu bạn kiểm tra và gửi lại đánh giá học viên.",
+      evaluationId,
+      now,
+    ).run();
+  }
   await audit(env, tenantId, auth.id,
     body.approved ? "trainee_evaluation.approved" : "trainee_evaluation.rejected",
     "trainee_evaluation", evaluationId);
-  return json({ evaluation: evaluationJson(await getEvaluationRow(env, tenantId, evaluationId)) });
+  return json({ evaluation: evaluationJson(reviewed) });
 }
 
 /**

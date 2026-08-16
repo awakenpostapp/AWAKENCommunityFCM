@@ -645,17 +645,6 @@ public sealed class TraineeDashboardPage : AsyncContentPage
             }
         }
 
-        var evaluations = UiKit.SecondaryButton("Lịch sử đánh giá học viên");
-        evaluations.Clicked += async (_, _) =>
-            await Navigation.PushAsync(new TraineeEvaluationHistoryPage(
-                _database,
-                Session,
-                CurrentUserId,
-                string.IsNullOrWhiteSpace(Session.CurrentProfile?.FullName)
-                    ? Session.CurrentUser?.Username ?? "Cầu thủ học viên"
-                    : Session.CurrentProfile.FullName));
-        root.Children.Add(evaluations);
-
         var unread = notifications.Count(item => !item.IsRead);
         if (unread > 0)
         {

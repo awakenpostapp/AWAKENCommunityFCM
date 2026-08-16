@@ -32,6 +32,7 @@ import {
   registerFounder,
   reviewCheckIn,
   evaluations,
+  evaluationRequest,
   evaluationRoster,
   reviewEvaluation,
   reviewProof,
@@ -119,6 +120,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   params = match(path, /^\/v1\/evaluations\/([^/]+)$/u);
   if ((method === "PATCH" || method === "GET") && params) return evaluations(request, env, params[0]!);
   if (method === "POST" && path === "/v1/evaluations") return evaluations(request, env);
+  params = match(path, /^\/v1\/classes\/([^/]+)\/evaluation-request$/u);
+  if (method === "PATCH" && params) return evaluationRequest(request, env, params[0]!);
 
   if ((method === "GET" || method === "POST") && path === "/v1/tuition/invoices") return tuition(request, env);
   params = match(path, /^\/v1\/tuition\/invoices\/([^/]+)\/proofs$/u);

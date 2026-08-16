@@ -116,7 +116,12 @@ public enum NotificationKind
     AttendanceUpdated = 6,
     System = 7,
     CoachCheckIn = 8,
-    CoachCheckInReviewed = 9
+    CoachCheckInReviewed = 9,
+    EvaluationRequestOpened = 10,
+    EvaluationSubmitted = 11,
+    EvaluationApproved = 12,
+    EvaluationRejected = 13,
+    EvaluationClassCompleted = 14
 }
 
 public static class DomainText
