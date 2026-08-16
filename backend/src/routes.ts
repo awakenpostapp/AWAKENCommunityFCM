@@ -1363,6 +1363,122 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
         }
       }
     }
+    else if (auth.role === "founder" && coachTaughtManually) {
+      // Historical classes may have been taught before the app was deployed.
+      // A Founder can explicitly record that lesson as Coach-taught.  These
+      // rows are approved/payable immediately, while retaining empty selfie
+      // keys and an auditable marker explaining why no images exist.
+      const session = await env.DB.prepare(
+        "SELECT class_id, session_date FROM training_sessions WHERE id=? AND tenant_id=? LIMIT 1",
+      ).bind(actualSessionId, tenantId).first<{ class_id: string; session_date: string }>();
+      if (session) {
+        const assignments = await allRows<{
+          coach_user_id: string;
+          salary_per_session_vnd: number;
+        }>(env.DB.prepare(
+          `SELECT coach_user_id, salary_per_session_vnd FROM class_coaches
+           WHERE tenant_id=? AND class_id=? AND is_active=1`,
+        ).bind(tenantId, session.class_id));
+        const existing = await allRows<{
+          id: string;
+          coach_user_id: string;
+          checkin_selfie_object_key: string;
+          checkout_selfie_object_key: string;
+          approval_status: string;
+          checked_in_at: string;
+          checked_out_at: string | null;
+          duration_seconds: number;
+          review_note: string;
+          salary_per_session_vnd_snapshot: number;
+        }>(env.DB.prepare(
+          `SELECT id, coach_user_id, checkin_selfie_object_key,
+                  checkout_selfie_object_key, approval_status, checked_in_at,
+                  checked_out_at, duration_seconds, review_note,
+                  salary_per_session_vnd_snapshot
+           FROM coach_checkins WHERE tenant_id=? AND session_id=?`,
+        ).bind(tenantId, actualSessionId));
+        const existingByCoach = new Map(existing.map((row) => [row.coach_user_id, row]));
+        const marker = "Founder ghi nhận buổi học cũ; Coach đã dạy";
+        const manualStatements: D1PreparedStatement[] = [];
+        const salaryStatements: D1PreparedStatement[] = [];
+        const period = String(session.session_date).slice(0, 7);
+        const dueDate = salaryDueDateForConfirmation(now);
+        for (const assignment of assignments) {
+          const current = existingByCoach.get(assignment.coach_user_id);
+          const alreadyPayable = Boolean(
+            current
+            && current.approval_status === "approved"
+            && current.checked_out_at
+            && (current.checkout_selfie_object_key || current.review_note.includes(marker)),
+          );
+          if (alreadyPayable) continue;
+
+          const checkedInAt = current?.checked_in_at || now;
+          const checkedOutAt = current?.checked_out_at || checkedInAt;
+          const note = `${rawOverrideReason} · ${marker}`.trim();
+          if (current) {
+            manualStatements.push(env.DB.prepare(
+              `UPDATE coach_checkins SET salary_per_session_vnd_snapshot=?,
+               checked_in_at=?, checked_out_at=?, duration_seconds=?,
+               approval_status='approved', reviewed_by_user_id=?, reviewed_at=?,
+               review_note=? WHERE id=? AND tenant_id=?`,
+            ).bind(
+              Number(current.salary_per_session_vnd_snapshot ?? assignment.salary_per_session_vnd)
+                || assignment.salary_per_session_vnd,
+              checkedInAt,
+              checkedOutAt,
+              Math.max(0, Number(current.duration_seconds ?? 0)),
+              auth.id,
+              now,
+              note,
+              current.id,
+              tenantId,
+            ));
+          }
+          else {
+            manualStatements.push(env.DB.prepare(
+              `INSERT INTO coach_checkins
+               (id, tenant_id, session_id, coach_user_id, checkin_selfie_object_key,
+                checkout_selfie_object_key, salary_per_session_vnd_snapshot,
+                checked_in_at, checked_out_at, duration_seconds, approval_status,
+                reviewed_by_user_id, reviewed_at, review_note)
+               VALUES (?, ?, ?, ?, '', '', ?, ?, ?, 0, 'approved', ?, ?, ?)`,
+            ).bind(
+              newId(),
+              tenantId,
+              actualSessionId,
+              assignment.coach_user_id,
+              assignment.salary_per_session_vnd,
+              checkedInAt,
+              checkedOutAt,
+              auth.id,
+              now,
+              note,
+            ));
+          }
+          salaryStatements.push(env.DB.prepare(
+            `INSERT INTO coach_salaries
+             (id, tenant_id, coach_user_id, period, amount_vnd, due_date, status, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+             ON CONFLICT(coach_user_id, period) DO UPDATE SET
+             amount_vnd=coach_salaries.amount_vnd+excluded.amount_vnd,
+             updated_at=excluded.updated_at
+             WHERE coach_salaries.tenant_id=excluded.tenant_id`,
+          ).bind(
+            newId(),
+            tenantId,
+            assignment.coach_user_id,
+            period,
+            assignment.salary_per_session_vnd,
+            dueDate,
+            now,
+          ));
+        }
+        if (manualStatements.length > 0) {
+          await env.DB.batch([...manualStatements, ...salaryStatements]);
+        }
+      }
+    }
 
     const incoming = Array.isArray(body.records) ? body.records : [];
     const statusText: Record<string, string> = {
@@ -1949,6 +2065,116 @@ export async function reviewProof(request: Request, env: Env, proofId: string): 
         }
       : null,
   });
+}
+
+/**
+ * Founder-only parent-transfer confirmation. The parent has already paid by
+ * bank transfer, so no proof upload is required; the operation still creates
+ * the immutable receipt, notifies the Trainee and writes an audit event.
+ */
+export async function confirmParentPayment(
+  request: Request,
+  env: Env,
+  invoiceId: string,
+): Promise<Response> {
+  const auth = await authenticate(request, env);
+  requireRole(auth, "founder");
+  const tenantId = requireTenant(auth);
+  const invoice = await env.DB.prepare(
+    `SELECT ti.*, c.team_name, cl.name AS class_name, p.full_name AS trainee_name,
+            fp.full_name AS founder_name, u.is_tuition_supported
+       FROM tuition_invoices ti
+       JOIN clubs c ON c.tenant_id=ti.tenant_id
+       JOIN classes cl ON cl.id=ti.class_id AND cl.tenant_id=ti.tenant_id
+       JOIN profiles p ON p.user_id=ti.trainee_user_id AND p.tenant_id=ti.tenant_id
+       JOIN profiles fp ON fp.user_id=? AND fp.tenant_id=ti.tenant_id
+       JOIN users u ON u.id=ti.trainee_user_id AND u.tenant_id=ti.tenant_id
+      WHERE ti.id=? AND ti.tenant_id=? LIMIT 1`,
+  ).bind(auth.id, invoiceId, tenantId).first<Record<string, unknown>>();
+  if (!invoice) throw new ApiError(404, "not_found", "Không tìm thấy khoản học phí.");
+  if (Number(invoice.is_tuition_supported ?? 0) === 1) {
+    throw new ApiError(409, "tuition_waived", "Cầu thủ học viên được hỗ trợ đã được miễn học phí.");
+  }
+
+  const existingReceipt = await env.DB.prepare(
+    "SELECT * FROM receipts WHERE invoice_id=? AND tenant_id=? LIMIT 1",
+  ).bind(invoiceId, tenantId).first<Record<string, unknown>>();
+  if (existingReceipt) {
+    return json({
+      invoiceId,
+      accepted: true,
+      receipt: {
+        id: existingReceipt.id,
+        invoiceId: existingReceipt.invoice_id,
+        receiptNumber: existingReceipt.receipt_number,
+        teamNameSnapshot: existingReceipt.team_name_snapshot,
+        traineeNameSnapshot: existingReceipt.trainee_name_snapshot,
+        classNameSnapshot: existingReceipt.class_name_snapshot,
+        cycleSnapshot: existingReceipt.cycle_snapshot,
+        amountVndSnapshot: existingReceipt.amount_vnd_snapshot,
+        confirmedByNameSnapshot: existingReceipt.confirmed_by_name_snapshot,
+        confirmedAt: existingReceipt.confirmed_at,
+        pdfObjectKey: existingReceipt.pdf_object_key,
+      },
+    });
+  }
+
+  const now = nowIso();
+  const receiptId = newId();
+  const receiptNumber = `CFC-${now.slice(0, 10).replaceAll("-", "")}-${invoiceId.slice(0, 6).toUpperCase()}`;
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE tuition_invoices SET status='paid', updated_at=? WHERE id=? AND tenant_id=?",
+    ).bind(now, invoiceId, tenantId),
+    env.DB.prepare(
+      `UPDATE payment_proofs SET review_status='accepted', reviewed_by_user_id=?, reviewed_at=?
+       WHERE invoice_id=? AND tenant_id=? AND review_status='pending'`,
+    ).bind(auth.id, now, invoiceId, tenantId),
+    env.DB.prepare(
+      `INSERT INTO receipts (id, tenant_id, invoice_id, receipt_number, team_name_snapshot,
+       trainee_name_snapshot, class_name_snapshot, cycle_snapshot, amount_vnd_snapshot,
+       confirmed_by_name_snapshot, confirmed_at, pdf_object_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+    ).bind(
+      receiptId,
+      tenantId,
+      invoiceId,
+      receiptNumber,
+      invoice.team_name,
+      invoice.trainee_name,
+      invoice.class_name,
+      `Chu kỳ ${invoice.cycle_number}`,
+      Number(invoice.amount_vnd ?? 0),
+      invoice.founder_name,
+      now,
+    ),
+    env.DB.prepare(
+      `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
+       VALUES (?, ?, ?, 'tuition_confirmed', 'Học phí đã được xác nhận',
+               'Founder đã xác nhận khoản chuyển khoản từ phụ huynh. Bạn có thể xuất hóa đơn PDF.', ?, ?)`,
+    ).bind(newId(), tenantId, invoice.trainee_user_id, invoiceId, now),
+  ]);
+  await audit(env, tenantId, auth.id, "tuition.parent_payment_confirmed", "tuition_invoice", invoiceId, {
+    receiptId,
+    receiptNumber,
+  });
+  return json({
+    invoiceId,
+    accepted: true,
+    receipt: {
+      id: receiptId,
+      invoiceId,
+      receiptNumber,
+      teamNameSnapshot: invoice.team_name,
+      traineeNameSnapshot: invoice.trainee_name,
+      classNameSnapshot: invoice.class_name,
+      cycleSnapshot: `Chu kỳ ${invoice.cycle_number}`,
+      amountVndSnapshot: Number(invoice.amount_vnd ?? 0),
+      confirmedByNameSnapshot: invoice.founder_name,
+      confirmedAt: now,
+      pdfObjectKey: "",
+    },
+  }, 201);
 }
 
 /**

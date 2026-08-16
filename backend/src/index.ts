@@ -36,6 +36,7 @@ import {
   evaluationRoster,
   reviewEvaluation,
   reviewProof,
+  confirmParentPayment,
   setupAdmin,
   snapshot,
   submitProof,
@@ -128,6 +129,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (method === "POST" && params) return submitProof(request, env, params[0]!);
   params = match(path, /^\/v1\/tuition\/proofs\/([^/]+)\/review$/u);
   if (method === "PATCH" && params) return reviewProof(request, env, params[0]!);
+  params = match(path, /^\/v1\/tuition\/invoices\/([^/]+)\/parent-confirm$/u);
+  if (method === "POST" && params) return confirmParentPayment(request, env, params[0]!);
   params = match(path, /^\/v1\/tuition\/proofs\/([^/]+)\/image$/u);
   if (method === "GET" && params) return paymentProofImage(request, env, params[0]!);
   params = match(path, /^\/v1\/tuition\/invoices\/([^/]+)\/cycles$/u);

@@ -84,12 +84,30 @@ public sealed class ClassListPage : AsyncContentPage
                     ? async () => await PushPageAsync(new ClassEditorPage(_database, Session))
                     : null,
                 role == UserRole.Founder
-                    ? async (row, date) => await PushPageAsync(new AttendancePage(
-                        _database,
-                        Session,
-                        row,
-                        date,
-                        historicalMode: true))
+                    ? async (row, date) =>
+                    {
+                        // A future calendar cell is a class preview, not an
+                        // attendance session.  Opening AttendancePage here
+                        // would try to create a future session and either
+                        // show an empty attendance form or throw.
+                        if (date.Date > DateTime.Today)
+                        {
+                            await PushPageAsync(new ClassDetailsPage(
+                                _database,
+                                Session,
+                                _media,
+                                _rememberedLogin,
+                                row));
+                            return;
+                        }
+
+                        await PushPageAsync(new AttendancePage(
+                            _database,
+                            Session,
+                            row,
+                            date,
+                            historicalMode: true));
+                    }
                     : null));
             if (role == UserRole.Founder)
             {
@@ -462,6 +480,8 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
             _sessionRecord.Id);
         var substituted = sessionCheckIns.Any(item =>
             CoachCheckInTime.IsFounderSubstitution(item.CheckIn));
+        var manuallyTaught = sessionCheckIns.Any(item =>
+            CoachCheckInTime.IsFounderManualTaught(item.CheckIn));
         var taught = _sessionRecord.Status is SessionStatus.Submitted or SessionStatus.Locked
                      || sessionCheckIns.Any(item => CoachCheckInTime.HasCoachCheckout(item.CheckIn));
         var root = new VerticalStackLayout
@@ -486,6 +506,8 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
                 UiKit.StatusBadge(
                     substituted
                         ? "Đã dạy · Founder điểm danh thay Coach"
+                        : manuallyTaught
+                            ? "Đã dạy · Ghi nhận thủ công"
                         : taught ? "Đã dạy" : "Coach không dạy",
                     substituted || taught ? UiKit.Success : UiKit.Danger)
             }
@@ -876,27 +898,22 @@ public sealed class ClassDetailsPage : ContentPage
 
         foreach (var trainee in _row.Trainees)
         {
-            var memberCard = MemberCard(
-                trainee,
-                _database,
-                _session,
-                media,
-                rememberedLogin);
             var canOpenEvaluations = role == UserRole.Founder
                                       || role == UserRole.Coach
                                       || (role == UserRole.Trainee
                                           && trainee.Account.Id == _session.CurrentUser?.Id);
-            var memberAndEvaluation = new VerticalStackLayout
-            {
-                Spacing = 6,
-                Children = { memberCard }
-            };
+            Button? evaluationButton = null;
             if (canOpenEvaluations)
             {
-                var evaluationButton = UiKit.SecondaryButton(
+                evaluationButton = UiKit.SecondaryButton(
                     role == UserRole.Coach && trainee.Account.Id != _session.CurrentUser?.Id
                         ? "Đánh giá / lịch sử"
                         : "Lịch sử đánh giá");
+                evaluationButton.FontSize = 11;
+                evaluationButton.Padding = new Thickness(8, 3);
+                evaluationButton.MinimumHeightRequest = 32;
+                evaluationButton.HeightRequest = 32;
+                evaluationButton.HorizontalOptions = LayoutOptions.End;
                 evaluationButton.Clicked += async (_, _) =>
                     await Navigation.PushAsync(new TraineeEvaluationHistoryPage(
                         _database,
@@ -904,6 +921,21 @@ public sealed class ClassDetailsPage : ContentPage
                         trainee.Account.Id,
                         trainee.DisplayName,
                         _row.Class.Id));
+            }
+            var memberCard = MemberCard(
+                trainee,
+                _database,
+                _session,
+                media,
+                rememberedLogin,
+                role == UserRole.Founder ? evaluationButton : null);
+            var memberAndEvaluation = new VerticalStackLayout
+            {
+                Spacing = 6,
+                Children = { memberCard }
+            };
+            if (canOpenEvaluations && role != UserRole.Founder && evaluationButton is not null)
+            {
                 memberAndEvaluation.Children.Add(evaluationButton);
             }
             if (role != UserRole.Founder)
@@ -917,6 +949,14 @@ public sealed class ClassDetailsPage : ContentPage
                                && item.Invoice.TraineeUserId == trainee.Account.Id)
                 .OrderByDescending(item => item.Invoice.CycleNumber)
                 .FirstOrDefault();
+            var completedCycles = trainee.Account.IsTuitionSupported
+                ? 0
+                : invoices
+                    .Where(item => item.Invoice.ClassId == _row.Class.Id
+                                   && item.Invoice.TraineeUserId == trainee.Account.Id
+                                   && item.Invoice.Status == InvoiceStatus.Paid
+                                   && item.Progress.IsComplete)
+                    .Sum(item => Math.Max(1, item.Invoice.CycleCount));
             var enrollment = enrollments.FirstOrDefault(item =>
                 item.TraineeUserId == trainee.Account.Id);
             var progress = invoiceRow?.Progress
@@ -937,7 +977,12 @@ public sealed class ClassDetailsPage : ContentPage
                 {
                     memberAndEvaluation,
                     CreateClassAttendanceSummary(attendance),
-                    CreateTraineeTuitionSummary(trainee, enrollment, invoiceRow, progress)
+                    CreateTraineeTuitionSummary(
+                        trainee,
+                        enrollment,
+                        invoiceRow,
+                        progress,
+                        completedCycles)
                 }
             });
         }
@@ -966,7 +1011,8 @@ public sealed class ClassDetailsPage : ContentPage
         MemberRow trainee,
         ClassEnrollment? enrollment,
         InvoiceRow? invoiceRow,
-        TuitionCycleProgress progress)
+        TuitionCycleProgress progress,
+        int completedCycles)
     {
         var supported = trainee.Account.IsTuitionSupported;
         var isTrial = !supported && enrollment?.IsTrial == true;
@@ -984,6 +1030,10 @@ public sealed class ClassDetailsPage : ContentPage
                 InvoiceStatus.Pending => "Chưa đóng",
                 _ => "Chưa có bill"
             };
+        if (!supported && completedCycles > 0)
+        {
+            status += $" - Đã học {completedCycles} chu kỳ";
+        }
         var statusColor = supported
             ? UiKit.Success
             : invoiceRow?.Invoice.Status switch
@@ -1063,7 +1113,8 @@ public sealed class ClassDetailsPage : ContentPage
         AppDatabase database,
         SessionService session,
         MediaService media,
-        RememberedLoginService rememberedLogin)
+        RememberedLoginService rememberedLogin,
+        Button? trailingAction = null)
     {
         var grid = new Grid
         {
@@ -1071,7 +1122,10 @@ public sealed class ClassDetailsPage : ContentPage
             ColumnDefinitions =
             {
                 new ColumnDefinition(52),
-                new ColumnDefinition(GridLength.Star)
+                new ColumnDefinition(GridLength.Star),
+                trailingAction is null
+                    ? new ColumnDefinition(0)
+                    : new ColumnDefinition(GridLength.Auto)
             }
         };
         var avatar = UiKit.Avatar(member.Profile.PhotoPath, 48);
@@ -1089,6 +1143,12 @@ public sealed class ClassDetailsPage : ContentPage
         };
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
+        if (trailingAction is not null)
+        {
+            Grid.SetColumn(trailingAction, 2);
+            trailingAction.VerticalOptions = LayoutOptions.Center;
+            grid.Children.Add(trailingAction);
+        }
         var card = UiKit.Card(grid, new Thickness(12));
         if (session.CurrentUser?.Role != UserRole.Trainee
             || member.Account.Role is UserRole.Coach or UserRole.Trainee)

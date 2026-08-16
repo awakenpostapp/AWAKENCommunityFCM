@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.DependencyInjection;
 using CommunityFootballClubManager.Models;
 using CommunityFootballClubManager.Services;
 using CommunityFootballClubManager.Ui;
@@ -489,6 +490,31 @@ public sealed class MemberProfilePage : AsyncContentPage
                         CurrentUserId,
                         member.Account.Id);
                 root.Children.Add(BuildTraineeHistorySection(allTraineeHistory, member.Account.Id));
+            }
+        }
+
+        if (Session.CurrentUser?.Role == UserRole.Founder
+            && member.Account.Role == UserRole.Trainee
+            && Application.Current?.Handler?.MauiContext?.Services is { } services)
+        {
+            var qrCode = services.GetService<QrCodeService>();
+            var pdfService = services.GetService<IReceiptPdfService>();
+            var imageSave = services.GetService<IImageSaveService>();
+            if (qrCode is not null && pdfService is not null && imageSave is not null)
+            {
+                var parentPayment = UiKit.PrimaryButton("Đóng học phí thay Phụ huynh");
+                parentPayment.Clicked += async (_, _) =>
+                    await Navigation.PushAsync(new FounderParentTuitionPage(
+                        _database,
+                        Session,
+                        member.Account.Id,
+                        member.DisplayName,
+                        qrCode,
+                        pdfService,
+                        imageSave));
+                // Keep this action above profile editing so payment handling is
+                // clearly separated from personal-data changes.
+                root.Children.Add(parentPayment);
             }
         }
 

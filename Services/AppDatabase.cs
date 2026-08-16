@@ -3937,6 +3937,14 @@ public sealed partial class AppDatabase
                     Online.Upsert(Online.CoachCheckIns, substituted, value => value.Id == substituted.Id);
                 }
             }
+            else if (submit && onlineActor.Role == UserRole.Founder && founderCoachTaughtManually)
+            {
+                // The Worker creates the payable historical Coach rows in the
+                // same attendance transaction.  Reload the projection so the
+                // Founder immediately sees the generated salary/check-in data
+                // instead of waiting for the next snapshot refresh.
+                await ReloadOnlineSnapshotAsync();
+            }
             return;
         }
 
@@ -3983,6 +3991,7 @@ public sealed partial class AppDatabase
         var recordsToUpdate = new List<AttendanceRecord>();
         var substitutedCheckInsToInsert = new List<CoachCheckIn>();
         var substitutedCheckInsToUpdate = new List<CoachCheckIn>();
+        var manuallyTaughtCoachIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in items)
         {
             var record = item.ExistingRecord
@@ -4072,6 +4081,62 @@ public sealed partial class AppDatabase
                 }
             }
         }
+        else if (submit && actor.Role == UserRole.Founder && founderCoachTaughtManually)
+        {
+            // Historical classes can be entered after the app goes live. A
+            // Founder explicitly choosing “Đã dạy (ghi nhận thủ công)” must
+            // create an approved, payable Coach teaching row even though no
+            // selfie exists for that old lesson.
+            var assignments = await Database.Table<ClassCoachAssignment>()
+                .Where(item => item.ClassId == session.ClassId && item.IsActive)
+                .ToListAsync();
+            var existingCheckIns = (await Database.Table<CoachCheckIn>()
+                    .Where(item => item.SessionId == session.Id)
+                    .ToListAsync())
+                .ToDictionary(item => item.CoachUserId);
+            var recordedAt = DateTime.UtcNow;
+            foreach (var assignment in assignments)
+            {
+                existingCheckIns.TryGetValue(assignment.CoachUserId, out var checkIn);
+                var alreadyPayable = checkIn is not null
+                                      && checkIn.ApprovalStatus == CoachCheckInApprovalStatus.Approved
+                                      && CoachCheckInTime.HasCoachCheckout(checkIn);
+                manuallyTaughtCoachIds.Add(assignment.CoachUserId);
+                if (alreadyPayable)
+                {
+                    continue;
+                }
+
+                checkIn ??= new CoachCheckIn
+                {
+                    Id = EntityId.New(),
+                    SessionId = session.Id,
+                    CoachUserId = assignment.CoachUserId
+                };
+                checkIn.SalaryPerSessionVndSnapshot = Math.Max(
+                    0,
+                    assignment.SalaryPerSessionVnd);
+                checkIn.CheckedInAtUtc = checkIn.CheckedInAtUtc == default
+                    ? recordedAt
+                    : checkIn.CheckedInAtUtc;
+                checkIn.CheckedOutAtUtc ??= checkIn.CheckedInAtUtc;
+                checkIn.DurationSeconds = Math.Max(
+                    0,
+                    checkIn.DurationSeconds);
+                checkIn.ApprovalStatus = CoachCheckInApprovalStatus.Approved;
+                checkIn.ReviewedByUserId = actor.Id;
+                checkIn.ReviewedAtUtc = recordedAt;
+                checkIn.ReviewNote = storedLocalOverrideReason;
+                if (existingCheckIns.ContainsKey(assignment.CoachUserId))
+                {
+                    substitutedCheckInsToUpdate.Add(checkIn);
+                }
+                else
+                {
+                    substitutedCheckInsToInsert.Add(checkIn);
+                }
+            }
+        }
 
         session.Status = submit ? SessionStatus.Submitted : SessionStatus.Draft;
         session.SubmittedByUserId = submit ? actorUserId : session.SubmittedByUserId;
@@ -4102,6 +4167,11 @@ public sealed partial class AppDatabase
 
             connection.Update(session);
         });
+
+        foreach (var coachUserId in manuallyTaughtCoachIds)
+        {
+            await EnsureCoachSalaryForPeriodAsync(coachUserId, session.SessionDate);
+        }
 
         if (_cloudOptions.IsConfigured)
         {
@@ -6647,6 +6717,132 @@ public sealed partial class AppDatabase
             writeCloud: true);
         await AddAuditAsync(actorUserId, "ConfirmTuition", nameof(TuitionInvoice), invoice.Id, receipt.ReceiptNumber,
             writeCloud: true);
+        return receipt;
+    }
+
+    /// <summary>
+    /// Founder records a parent bank transfer directly. Unlike
+    /// ConfirmTuitionAsync this flow intentionally does not require a payment
+    /// proof image; it still uses the same receipt, notification, audit and
+    /// online tenant checks as a normal bill confirmation.
+    /// </summary>
+    public async Task<Receipt> ConfirmTuitionByFounderAsync(
+        string actorUserId,
+        string invoiceId)
+    {
+        if (IsOnline)
+        {
+            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            await EnsureOnlineSnapshotAsync();
+            var onlineInvoice = Online.Invoices.FirstOrDefault(item => item.Id == invoiceId)
+                ?? throw new InvalidOperationException("Không tìm thấy học phí.");
+            if (Online.User(onlineInvoice.TraineeUserId)?.IsTuitionSupported == true)
+            {
+                throw new InvalidOperationException(
+                    $"{DomainText.SupportedTraineeLabel} được miễn học phí, không cần xác nhận.");
+            }
+
+            if (Online.Receipts.FirstOrDefault(item => item.InvoiceId == invoiceId) is { } existing)
+            {
+                return existing;
+            }
+
+            try
+            {
+                await _cloudApi.PostAsync<object, object>(
+                    $"tuition/invoices/{Uri.EscapeDataString(invoiceId)}/parent-confirm",
+                    new { },
+                    EntityId.New());
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
+
+            await ReloadOnlineSnapshotAsync();
+            return Online.Receipts.FirstOrDefault(item => item.InvoiceId == invoiceId)
+                ?? throw new InvalidOperationException("Backend chưa tạo hóa đơn xác nhận.");
+        }
+
+        await InitializeAsync();
+        var founder = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var invoice = await Database.FindAsync<TuitionInvoice>(invoiceId)
+                      ?? throw new InvalidOperationException("Không tìm thấy học phí.");
+        var trainee = await Database.FindAsync<UserAccount>(invoice.TraineeUserId);
+        if (trainee?.IsTuitionSupported == true)
+        {
+            throw new InvalidOperationException(
+                $"{DomainText.SupportedTraineeLabel} được miễn học phí, không cần xác nhận.");
+        }
+
+        var existingReceipt = await Database.Table<Receipt>()
+            .Where(item => item.InvoiceId == invoice.Id)
+            .FirstOrDefaultAsync();
+        if (existingReceipt is not null)
+        {
+            return existingReceipt;
+        }
+
+        if (_cloudOptions.IsConfigured)
+        {
+            await EnsureCloudWriteReadyAsync(actorUserId);
+            try
+            {
+                await _cloudApi.PostAsync<object, object>(
+                    $"tuition/invoices/{Uri.EscapeDataString(invoiceId)}/parent-confirm",
+                    new { },
+                    EntityId.New());
+                await RefreshCloudProjectionAsync();
+                return await Database.Table<Receipt>()
+                           .Where(item => item.InvoiceId == invoice.Id)
+                           .FirstOrDefaultAsync()
+                       ?? throw new InvalidOperationException("Backend chưa tạo hóa đơn xác nhận.");
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
+        }
+
+        var club = await GetClubAsync();
+        var traineeProfile = await GetProfileAsync(invoice.TraineeUserId);
+        var founderProfile = await GetProfileAsync(founder.Id);
+        var trainingClass = await Database.FindAsync<TrainingClass>(invoice.ClassId);
+        invoice.Status = InvoiceStatus.Paid;
+        invoice.UpdatedAtUtc = DateTime.UtcNow;
+        var receipt = new Receipt
+        {
+            Id = EntityId.New(),
+            InvoiceId = invoice.Id,
+            ReceiptNumber = $"CFC-{DateTime.Now:yyyyMMdd}-{invoice.Id[..6].ToUpperInvariant()}",
+            TeamNameSnapshot = club.TeamName,
+            TraineeNameSnapshot = traineeProfile.FullName,
+            ClassNameSnapshot = trainingClass?.Name ?? "Lớp học",
+            PeriodSnapshot = DomainText.TuitionCycle(invoice),
+            AmountVndSnapshot = invoice.AmountVnd,
+            ConfirmedByNameSnapshot = founderProfile.FullName,
+            ConfirmedAtUtc = DateTime.UtcNow
+        };
+        await Database.RunInTransactionAsync(connection =>
+        {
+            connection.Update(invoice);
+            connection.Insert(receipt);
+        });
+
+        await AddNotificationAsync(
+            invoice.TraineeUserId,
+            NotificationKind.TuitionConfirmed,
+            "Học phí đã được xác nhận",
+            $"{DomainText.TuitionCycle(invoice)} đã được Founder xác nhận từ phụ huynh. Bạn có thể xuất hóa đơn PDF.",
+            invoice.Id,
+            writeCloud: false);
+        await AddAuditAsync(
+            actorUserId,
+            "ConfirmTuitionByFounder",
+            nameof(TuitionInvoice),
+            invoice.Id,
+            receipt.ReceiptNumber,
+            writeCloud: false);
         return receipt;
     }
 

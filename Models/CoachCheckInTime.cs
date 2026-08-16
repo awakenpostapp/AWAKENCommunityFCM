@@ -6,6 +6,12 @@ public static class CoachCheckInTime
     public const int CheckInLockAfterEndMinutes = 120;
     public const string AutoAbsentReviewNote = "AUTO_ABSENT_NO_CHECKIN";
     public const string FounderSubstitutedCoachReviewNote = "FOUNDER_SUBSTITUTED_COACH";
+    /// <summary>
+    /// Marker used when a Founder backfills a completed historical lesson.
+    /// These rows have no selfies because the Coach was not using the app yet,
+    /// but they are still payable teaching sessions.
+    /// </summary>
+    public const string FounderManualTaughtMarker = "Founder ghi nhận buổi học cũ; Coach đã dạy";
 
     /// <summary>
     /// Safety cap for an open teaching session.  A missing checkout must not
@@ -32,11 +38,18 @@ public static class CoachCheckInTime
 
     public static bool IsSafetyClosed(CoachCheckIn checkIn) =>
         checkIn.CheckedOutAtUtc is not null
-        && string.IsNullOrWhiteSpace(checkIn.CheckOutSelfiePath);
+        && string.IsNullOrWhiteSpace(checkIn.CheckOutSelfiePath)
+        && !IsFounderManualTaught(checkIn);
 
     public static bool HasCoachCheckout(CoachCheckIn checkIn) =>
         checkIn.CheckedOutAtUtc is not null
-        && !string.IsNullOrWhiteSpace(checkIn.CheckOutSelfiePath);
+        && (!string.IsNullOrWhiteSpace(checkIn.CheckOutSelfiePath)
+            || IsFounderManualTaught(checkIn));
+
+    public static bool IsFounderManualTaught(CoachCheckIn checkIn) =>
+        checkIn.ReviewNote.Contains(
+            FounderManualTaughtMarker,
+            StringComparison.OrdinalIgnoreCase);
 
     public static bool IsAutoAbsent(CoachCheckIn checkIn) =>
         string.Equals(checkIn.ReviewNote, AutoAbsentReviewNote, StringComparison.Ordinal);

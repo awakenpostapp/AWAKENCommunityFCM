@@ -1428,3 +1428,224 @@ public sealed class TuitionPage : AsyncContentPage
     private static string Value(string value) =>
         string.IsNullOrWhiteSpace(value) ? "Chưa cập nhật" : value;
 }
+
+/// <summary>
+/// Founder-side payment flow for a parent who has transferred tuition
+/// directly. It intentionally mirrors the Trainee tuition information (bank,
+/// QR, amount, cycle and receipt) but never asks the Founder to upload a bill.
+/// </summary>
+public sealed class FounderParentTuitionPage : AsyncContentPage
+{
+    private readonly AppDatabase _database;
+    private readonly string _traineeUserId;
+    private readonly string _traineeName;
+    private readonly QrCodeService _qrCode;
+    private readonly IReceiptPdfService _pdfService;
+    private readonly IImageSaveService _imageSave;
+
+    public FounderParentTuitionPage(
+        AppDatabase database,
+        SessionService session,
+        string traineeUserId,
+        string traineeName,
+        QrCodeService qrCode,
+        IReceiptPdfService pdfService,
+        IImageSaveService imageSave)
+        : base(session, "Đóng học phí thay Phụ huynh")
+    {
+        _database = database;
+        _traineeUserId = traineeUserId;
+        _traineeName = traineeName;
+        _qrCode = qrCode;
+        _pdfService = pdfService;
+        _imageSave = imageSave;
+    }
+
+    protected override async Task LoadAsync()
+    {
+        await _database.EnsureRecurringDataAsync(DateTime.Today);
+        var club = await _database.GetClubAsync();
+        var rows = (await _database.GetInvoicesAsync(CurrentUserId))
+            .Where(item => item.Invoice.TraineeUserId == _traineeUserId)
+            .OrderBy(item => item.Invoice.Status == InvoiceStatus.Paid)
+            .ThenBy(item => item.Invoice.CycleNumber)
+            .ToList();
+        var root = new VerticalStackLayout
+        {
+            Padding = UiKit.PagePadding,
+            Spacing = UiKit.SectionSpacing,
+            Children =
+            {
+                UiKit.Headline(_traineeName),
+                UiKit.Caption("Founder xác nhận trực tiếp sau khi phụ huynh chuyển khoản. Không cần tải bill."),
+                UiKit.OfflineBanner()
+            }
+        };
+
+        if (Session.CurrentUser?.Role != UserRole.Founder)
+        {
+            root.Children.Add(UiKit.EmptyState("Không có quyền", "Chỉ Founder mới có thể xác nhận thay phụ huynh."));
+        }
+        else if (rows.Count == 0)
+        {
+            root.Children.Add(UiKit.EmptyState(
+                "Chưa có học phí",
+                "Học phí sẽ xuất hiện khi cầu thủ học viên được phân công vào lớp học."));
+        }
+        else
+        {
+            root.Children.Add(UiKit.Card(new VerticalStackLayout
+            {
+                Spacing = 3,
+                Children =
+                {
+                    UiKit.Caption("TỔNG TIỀN CẦN THU", UiKit.TextSecondary),
+                    UiKit.Title(UiKit.Money(rows
+                        .Where(item => item.Invoice.Status != InvoiceStatus.Paid)
+                        .Sum(item => item.Invoice.AmountVnd))),
+                    UiKit.Caption("Đã xác nhận sẽ được trừ khỏi tổng cần thu.", UiKit.TextSecondary)
+                }
+            }));
+            foreach (var row in rows)
+            {
+                root.Children.Add(CreateInvoiceCard(row, club));
+            }
+        }
+
+        Content = UiKit.KeyboardAwareScroll(root);
+    }
+
+    private View CreateInvoiceCard(InvoiceRow row, ClubProfile club)
+    {
+        var stack = new VerticalStackLayout
+        {
+            Spacing = 7,
+            Children =
+            {
+                UiKit.Headline(row.ClassName),
+                UiKit.Body($"{DomainText.TuitionPrepaidCycles(row.Invoice)} · Hạn đóng {row.Invoice.DueDate:dd/MM/yyyy}"),
+                UiKit.StatusBadge(
+                    DomainText.Invoice(row.Invoice.Status),
+                    UiKit.InvoiceColor(row.Invoice.Status)),
+                UiKit.Body($"Số tiền: {UiKit.Money(row.Invoice.AmountVnd)}"),
+                UiKit.Caption($"Nội dung chuyển khoản: {row.Invoice.PaymentContent}"),
+                UiKit.Caption(
+                    $"Tiến độ chu kỳ: {row.Progress.AttendedSessions}/{row.Progress.PlannedSessions} buổi",
+                    UiKit.TextSecondary)
+            }
+        };
+
+        if (row.Progress.NeedsPaymentWarning)
+        {
+            stack.Children.Add(UiKit.StatusBadge(
+                "Cảnh báo: đã học đủ buổi thứ 2 nhưng chưa đóng học phí",
+                UiKit.Danger));
+        }
+
+        if (string.IsNullOrWhiteSpace(club.BankBin)
+            || string.IsNullOrWhiteSpace(club.BankAccountNumber))
+        {
+            stack.Children.Add(UiKit.Caption(
+                "Đội chưa cập nhật thông tin ngân hàng.",
+                UiKit.TextSecondary));
+        }
+        else
+        {
+            stack.Children.Add(UiKit.Card(new VerticalStackLayout
+            {
+                Spacing = 3,
+                Children =
+                {
+                    UiKit.Body($"Ngân hàng: {Value(club.BankName)}"),
+                    UiKit.Body($"Số tài khoản: {club.BankAccountNumber}"),
+                    UiKit.Body($"Tên tài khoản: {Value(club.BankAccountName)}")
+                }
+            }, new Thickness(10, 8)));
+
+            var qr = _qrCode.CreatePaymentQr(club, row.Invoice);
+            if (qr is not null)
+            {
+                stack.Children.Add(new Image
+                {
+                    Source = ImageSource.FromStream(() => new MemoryStream(qr)),
+                    HeightRequest = 190,
+                    WidthRequest = 190,
+                    HorizontalOptions = LayoutOptions.Center,
+                    Aspect = Aspect.AspectFit,
+                    BackgroundColor = Colors.White
+                });
+                var saveQr = UiKit.SecondaryButton("Lưu QR Code");
+                saveQr.Clicked += async (_, _) => await SaveQrAsync(row, qr, saveQr);
+                stack.Children.Add(saveQr);
+            }
+        }
+
+        if (row.Invoice.Status != InvoiceStatus.Paid)
+        {
+            var confirm = UiKit.PrimaryButton("Xác nhận phụ huynh đã chuyển khoản");
+            confirm.Clicked += async (_, _) =>
+            {
+                var accepted = await DisplayAlertAsync(
+                    "Xác nhận chuyển khoản?",
+                    $"{row.TraineeName} · {UiKit.Money(row.Invoice.AmountVnd)}\nFounder xác nhận đã nhận tiền từ phụ huynh.",
+                    "Xác nhận",
+                    "Hủy");
+                if (!accepted) return;
+
+                await RunActionAsync(
+                    () => _database.ConfirmTuitionByFounderAsync(CurrentUserId, row.Invoice.Id),
+                    confirm,
+                    "Đã xác nhận học phí và tạo hóa đơn cho học viên.");
+            };
+            stack.Children.Add(confirm);
+        }
+        else if (row.Receipt is not null)
+        {
+            stack.Children.Add(UiKit.Caption($"Hóa đơn: {row.Receipt.ReceiptNumber}"));
+            var receipt = UiKit.PrimaryButton("In / lưu hóa đơn PDF");
+            receipt.Clicked += async (_, _) => await ExportReceiptAsync(row.Receipt, club, receipt);
+            stack.Children.Add(receipt);
+        }
+
+        return UiKit.Card(stack);
+    }
+
+    private async Task SaveQrAsync(InvoiceRow row, byte[] qr, Button source)
+    {
+        await RunActionAsync(
+            async () =>
+            {
+                var location = await _imageSave.SavePngAsync(
+                    qr,
+                    $"QR-parent-{row.Invoice.Period}-{row.Invoice.Id}.png");
+                await DisplayAlertAsync("Đã lưu QR Code", $"Đã lưu tại {location}.", "OK");
+            },
+            source,
+            reload: false);
+    }
+
+    private async Task ExportReceiptAsync(Receipt receipt, ClubProfile club, Button source)
+    {
+        await RunActionAsync(
+            async () =>
+            {
+                var path = receipt.PdfPath;
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                {
+                    path = await _pdfService.GenerateAsync(receipt, club);
+                    await _database.UpdateReceiptPdfPathAsync(receipt.Id, path);
+                }
+
+                await Share.Default.RequestAsync(new ShareFileRequest
+                {
+                    Title = "Lưu hoặc chia sẻ hóa đơn học phí",
+                    File = new ShareFile(path, "application/pdf")
+                });
+            },
+            source,
+            reload: false);
+    }
+
+    private static string Value(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "Chưa cập nhật" : value;
+}

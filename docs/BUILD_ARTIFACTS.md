@@ -1,5 +1,13 @@
 # Android build artifacts
 
+## Release 3.0 — build 107
+
+| File | Purpose | SHA-256 |
+|---|---|---|
+| `AWAKENCommunityFCM-v3.0-build107-Release.apk` | Signed online Release APK (latest; upload to GitHub Release) | `9BD36CE454CECF252C5E40144956740BA62E0DE9AF7F2857F7CAF7AC858C44B2` |
+| `AWAKENCommunityFCM-v3.0-build107-Release.aab` | Signed Release Android App Bundle (local; not uploaded to GitHub) | `3BE6A647ADBDA7439C5AB4BE1C60642DB904545BA411F67365324CF4E38EE411` |
+| `AWAKENCommunityFCM-v3.0-build107-Debug.apk` | Debug APK (local; not uploaded to GitHub) | `E7DD1575FD9AB20C707118C69D6C53C800C6EF65CCD8F6D000D1330EE0F8C917` |
+
 ## Release 3.0 — build 106
 
 | File | Purpose | SHA-256 |

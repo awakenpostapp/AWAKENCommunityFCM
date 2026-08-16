@@ -1,5 +1,13 @@
 # Change log
 
+Release 3.0 - build 107 - 2026-08-17
+
+- Founder có thể mở buổi học cũ và chọn “Đã dạy (Ghi nhận thủ công)”. Hệ thống tạo bản ghi Coach đã hoàn tất, tính một buổi lương và ghi rõ nguồn xác nhận; thao tác lặp lại không tạo trùng lương. Ngày trong tương lai chỉ mở chi tiết lớp, không mở màn hình điểm danh.
+- Chi tiết lớp học cố định thu gọn nút “Lịch sử đánh giá” đặt cùng dòng học viên; trạng thái học phí hiển thị thêm số chu kỳ đã hoàn tất. Chu kỳ chỉ được tính khi đủ toàn bộ số buổi đã ghi nhận (kể cả vắng mặt) trong chu kỳ đó.
+- Founder có trang “Đóng học phí thay Phụ huynh” ngay trong hồ sơ Cầu thủ học viên. Trang hiển thị QR, ngân hàng, số tiền và tiến độ; Founder xác nhận chuyển khoản trực tiếp, không cần upload bill, sau đó có thể tạo/in hóa đơn PDF.
+- Bổ sung endpoint Worker/D1 tenant-scoped POST /v1/tuition/invoices/:id/parent-confirm với kiểm tra quyền, audit, notification và thao tác idempotent; giữ nguyên D1, R2, secrets và biến production hiện có.
+- Tăng Android build lên 107; artifact cũ không bị ghi đè.
+
 Release 3.0 - build 106 - 2026-08-16
 
 - Danh sách Cầu thủ học viên của Founder hiển thị ngay dưới tên account: Cầu thủ được hỗ trợ miễn phí, hoặc số chu kỳ đã học và tổng số buổi đã học.

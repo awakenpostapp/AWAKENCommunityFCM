@@ -461,7 +461,8 @@ async function recomputePendingCoachSalaries(env: Env, tenantId: string): Promis
          AND ci.coach_user_id=coach_salaries.coach_user_id
          AND ci.approval_status='approved'
          AND ci.checked_out_at IS NOT NULL
-         AND ci.checkout_selfie_object_key <> ''
+        AND (ci.checkout_selfie_object_key <> ''
+             OR ci.review_note LIKE '%Founder ghi nhận buổi học cũ; Coach đã dạy%')
          AND substr(ts.session_date, 1, 7)=coach_salaries.period
      ), 0),
      updated_at=?
@@ -483,7 +484,9 @@ async function recomputePendingCoachSalaryDueDates(env: Env, tenantId: string): 
          ON ts.id=ci.session_id AND ts.tenant_id=ci.tenant_id
       WHERE cs.tenant_id=? AND cs.status='pending' AND cs.amount_vnd>0
         AND ci.approval_status='approved' AND ci.reviewed_at IS NOT NULL
-        AND ci.checked_out_at IS NOT NULL AND ci.checkout_selfie_object_key<>''
+        AND ci.checked_out_at IS NOT NULL
+        AND (ci.checkout_selfie_object_key<>''
+             OR ci.review_note LIKE '%Founder ghi nhận buổi học cũ; Coach đã dạy%')
         AND substr(ts.session_date, 1, 7)=cs.period
       GROUP BY cs.id, cs.due_date`,
   ).bind(tenantId));
