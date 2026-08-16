@@ -1,5 +1,13 @@
 # Change log
 
+Release 3.0 - build 103 - 2026-08-16
+
+- Thu gọn toàn bộ pill trạng thái theo đúng kích thước nội dung; pill không còn bị kéo đầy chiều cao của card.
+- Ngày trong card lịch sử/lịch học được đặt ở góc trên bên trái, dành toàn bộ phần còn lại cho tên lớp, Coach, sân và trạng thái.
+- Ngày trong ô lịch tháng cũng căn góc trên bên trái để lịch gọn và dễ quét.
+- Giữ nguyên database, Cloudflare Worker/D1/R2, OAuth và logo AWAKEN Community FCM.
+- Android build tăng lên 103; artifact cũ không bị ghi đè.
+
 Release 3.0 - 2026-08-16
 
 - Đổi tên nhận diện phát hành thành AWAKEN Community FCM và giữ nguyên ApplicationId, OAuth callback, SQLite compatibility, Cloudflare Worker, D1, R2, secrets và toàn bộ dữ liệu nghiệp vụ hiện có.

@@ -491,9 +491,13 @@ public static class WeeklyScheduleView
         {
             Text = date.ToString("dd/MM"),
             FontFamily = "OpenSansSemibold",
-            FontSize = 13,
+            FontSize = 11,
             TextColor = UiKit.TextPrimary,
-            VerticalTextAlignment = TextAlignment.Center
+            HorizontalTextAlignment = TextAlignment.Start,
+            VerticalTextAlignment = TextAlignment.Start,
+            HorizontalOptions = LayoutOptions.Start,
+            VerticalOptions = LayoutOptions.Start,
+            Margin = new Thickness(0, -15, 0, 0)
         };
         var details = new VerticalStackLayout
         {
@@ -506,13 +510,13 @@ public static class WeeklyScheduleView
                     $"{DomainText.TimeRange(row.Class.StartTimeMinutes, row.Class.EndTimeMinutes)} · {row.Venue?.Name ?? "Ch\u01b0a c\u1eadp nh\u1eadt s\u00e2n"}")
             }
         };
-        Grid.SetColumn(details, 1);
         var badge = new Border
         {
             BackgroundColor = color,
             StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = 13 },
             Padding = new Thickness(9, 5),
+            HorizontalOptions = LayoutOptions.Start,
             VerticalOptions = LayoutOptions.Center,
             Content = new Label
             {
@@ -523,18 +527,23 @@ public static class WeeklyScheduleView
                 HorizontalTextAlignment = TextAlignment.Center
             }
         };
-        Grid.SetColumn(badge, 2);
-        return UiKit.Card(new Grid
+        var contentGrid = new Grid
         {
             ColumnSpacing = 8,
             ColumnDefinitions =
             {
-                new ColumnDefinition(new GridLength(52)),
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto)
             },
-            Children = { dateLabel, details, badge }
-        }, new Thickness(11));
+            Padding = new Thickness(0, 18, 0, 0)
+        };
+        Grid.SetColumn(details, 0);
+        Grid.SetColumn(badge, 1);
+        contentGrid.Children.Add(details);
+        contentGrid.Children.Add(badge);
+        Grid.SetColumnSpan(dateLabel, 2);
+        contentGrid.Children.Add(dateLabel);
+        return UiKit.Card(contentGrid, new Thickness(11));
     }
 
     private static IEnumerable<DateTime> GetMonthDates(
@@ -706,8 +715,11 @@ public static class WeeklyScheduleView
                 FontFamily = "OpenSansSemibold",
                 FontSize = 11,
                 TextColor = textColor,
-                HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center
+                HorizontalTextAlignment = TextAlignment.Start,
+                VerticalTextAlignment = TextAlignment.Start,
+                HorizontalOptions = LayoutOptions.Start,
+                VerticalOptions = LayoutOptions.Start,
+                Margin = new Thickness(4, 3, 0, 0)
             }
         };
         if (daySelected is not null && status != DayStatus.Empty)

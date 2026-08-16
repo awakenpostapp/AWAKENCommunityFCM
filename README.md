@@ -1,6 +1,6 @@
 # AWAKEN Community FCM
 
-## Cloudflare online (version 3.0)
+## Cloudflare online (version 3.0, build 103)
 
 The app is connected to the production Worker and D1 documented in
 `backend/DEPLOYMENT.md`. Cloud login/session, Founder registration, Admin

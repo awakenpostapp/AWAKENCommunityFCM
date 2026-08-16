@@ -352,15 +352,15 @@ public sealed class FounderClassHistoryPage : AsyncContentPage
                 {
                     Text = item.Session.SessionDate.ToString("dd/MM/yyyy"),
                     FontFamily = "OpenSansSemibold",
-                    FontSize = 11,
+                    FontSize = 10,
                     TextColor = UiKit.TextPrimary,
                     LineBreakMode = LineBreakMode.NoWrap,
                     MaxLines = 1,
-                    HorizontalTextAlignment = TextAlignment.Center,
-                    VerticalTextAlignment = TextAlignment.Center,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center,
-                    MinimumWidthRequest = 78
+                    HorizontalTextAlignment = TextAlignment.Start,
+                    VerticalTextAlignment = TextAlignment.Start,
+                    HorizontalOptions = LayoutOptions.Start,
+                    VerticalOptions = LayoutOptions.Start,
+                    Margin = new Thickness(0, -15, 0, 0)
                 };
                 var summary = new VerticalStackLayout
                 {
@@ -381,19 +381,22 @@ public sealed class FounderClassHistoryPage : AsyncContentPage
                         UiKit.Warning));
                 }
                 var badge = UiKit.StatusBadge(statusText, statusColor);
-                summary.SetValue(Microsoft.Maui.Controls.Grid.ColumnProperty, 1);
-                badge.SetValue(Microsoft.Maui.Controls.Grid.ColumnProperty, 2);
+                summary.SetValue(Microsoft.Maui.Controls.Grid.ColumnProperty, 0);
+                badge.SetValue(Microsoft.Maui.Controls.Grid.ColumnProperty, 1);
+                badge.HorizontalOptions = LayoutOptions.End;
                 var contentGrid = new Grid
                 {
                     ColumnSpacing = 8,
+                    Padding = new Thickness(0, 18, 0, 0),
                     ColumnDefinitions =
                     {
-                        new ColumnDefinition(new GridLength(82)),
                         new ColumnDefinition(GridLength.Star),
                         new ColumnDefinition(GridLength.Auto)
                     },
-                    Children = { dateLabel, summary, badge }
+                    Children = { summary, badge }
                 };
+                Grid.SetColumnSpan(dateLabel, 2);
+                contentGrid.Children.Add(dateLabel);
                 var card = UiKit.Card(contentGrid, new Thickness(10));
                 var tap = new TapGestureRecognizer();
                 tap.Tapped += async (_, _) => await Navigation.PushAsync(

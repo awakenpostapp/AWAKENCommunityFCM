@@ -368,6 +368,7 @@ public static class UiKit
             StrokeShape = new RoundRectangle { CornerRadius = 13 },
             Padding = new Thickness(10, 5),
             HorizontalOptions = LayoutOptions.Start,
+            VerticalOptions = LayoutOptions.Center,
             Content = new Label
             {
                 Text = text,
@@ -393,6 +394,7 @@ public static class UiKit
             StrokeShape = new RoundRectangle { CornerRadius = 13 },
             Padding = new Thickness(10, 5),
             HorizontalOptions = LayoutOptions.Start,
+            VerticalOptions = LayoutOptions.Center,
             Content = new Label
             {
                 Text = text,
