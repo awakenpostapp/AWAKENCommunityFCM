@@ -431,6 +431,23 @@ public sealed class MemberProfilePage : AsyncContentPage
             }
         };
 
+        if (Session.CurrentUser?.Role == UserRole.Founder
+            && member.Account.Role == UserRole.Trainee
+            && Application.Current?.Handler?.MauiContext?.Services is { } cardServices
+            && cardServices.GetService<IPlayerCardPngService>() is { } cardPng
+            && cardServices.GetService<IImageSaveService>() is { } cardImageSave)
+        {
+            var createPng = UiKit.SecondaryButton("Tạo PNG");
+            createPng.Margin = new Thickness(0, 6, 0, 0);
+            createPng.Clicked += async (_, _) =>
+                await CreatePlayerCardPngAsync(
+                    member,
+                    cardPng,
+                    cardImageSave,
+                    createPng);
+            details.Children.Add(createPng);
+        }
+
         if (member.Account.Role == UserRole.Trainee)
         {
             var evaluations = UiKit.SecondaryButton("Lịch sử đánh giá học viên");
@@ -643,6 +660,58 @@ public sealed class MemberProfilePage : AsyncContentPage
         }
 
         return false;
+    }
+
+    private async Task CreatePlayerCardPngAsync(
+        MemberRow member,
+        IPlayerCardPngService cardPng,
+        IImageSaveService imageSave,
+        Button source)
+    {
+        if (!source.IsEnabled)
+        {
+            return;
+        }
+
+        source.IsEnabled = false;
+        try
+        {
+            var club = await _database.GetClubAsync();
+            var bytes = await cardPng.CreateAsync(new PlayerCardPngData(
+                member.DisplayName,
+                club.TeamName,
+                member.Profile.PhotoPath,
+                member.Profile.DateOfBirth,
+                member.Profile.HeightCm,
+                member.Profile.WeightKg));
+            var safeName = string.Concat(member.DisplayName
+                    .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character)))
+                .Trim()
+                .Replace(' ', '-');
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                safeName = "cau-thu-hoc-vien";
+            }
+
+            var location = await imageSave.SavePngAsync(
+                bytes,
+                $"AWAKEN-player-{safeName}-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+            await DisplayAlertAsync(
+                "Đã tạo PNG",
+                $"Ảnh thông tin học viên 590 × 1004 px đã được lưu tại {location}.",
+                "OK");
+        }
+        catch (Exception exception)
+        {
+            await DisplayAlertAsync(
+                "Chưa thể tạo PNG",
+                exception.Message,
+                "Đóng");
+        }
+        finally
+        {
+            source.IsEnabled = true;
+        }
     }
 
     private static string Value(string value) =>

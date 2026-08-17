@@ -106,7 +106,11 @@ public sealed class ClassListPage : AsyncContentPage
                             Session,
                             row,
                             date,
-                            historicalMode: true));
+                            // Historical backfill is only for lessons that
+                            // pre-date the class record in the app. Current
+                            // lessons use the normal attendance flow and must
+                            // not expose the Founder-only legacy modes.
+                            historicalMode: IsHistoricalBackfill(row, date)));
                     }
                     : null));
             if (role == UserRole.Founder)
@@ -155,6 +159,12 @@ public sealed class ClassListPage : AsyncContentPage
         }
 
         Content = UiKit.KeyboardAwareScroll(root);
+    }
+
+    private static bool IsHistoricalBackfill(ClassRow row, DateTime date)
+    {
+        var createdDate = row.Class.CreatedAtUtc.ToLocalTime().Date;
+        return date.Date < createdDate;
     }
 
     private static bool IsFounderTodayClass(ClassRow row)

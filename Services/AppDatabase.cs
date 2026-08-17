@@ -7543,6 +7543,7 @@ public sealed partial class AppDatabase
         {
             if (checkIn.ApprovalStatus != CoachCheckInApprovalStatus.Approved
                 || !CoachCheckInTime.HasCoachCheckout(checkIn)
+                || CoachCheckInTime.IsFounderSubstitution(checkIn)
                 || !sessionMap.TryGetValue(checkIn.SessionId, out var session)
                 || !rateByClass.TryGetValue(session.ClassId, out var currentRate))
             {

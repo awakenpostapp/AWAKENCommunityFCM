@@ -1,5 +1,37 @@
 # Change log
 
+## Release 3.1 — build 112 — 2026-08-17
+
+### Tổng hợp thay đổi từ toàn bộ build Release 3.0
+
+- Hoàn thiện kiến trúc online Cloudflare Worker/D1/R2 theo tenant, giữ nguyên
+  dữ liệu production, OAuth Google, đồng bộ snapshot và kiểm tra quyền.
+- Bổ sung quản lý Founder, Coach và Cầu thủ học viên: phân quyền, hồ sơ,
+  thông tin đội, sân, lớp, lịch tháng, lịch sử lớp và lịch sử dạy học.
+- Bổ sung check-in/check-out selfie Coach, bộ đếm thời gian, duyệt check-out,
+  tính lương theo buổi, tự khóa ca bỏ quên và lịch sử trạng thái.
+- Bổ sung điểm danh học viên theo ngày, lịch sử chi tiết, Founder điểm danh
+  thay Coach và các trạng thái lớp học cũ.
+- Bổ sung học phí theo chu kỳ số buổi, trả trước nhiều chu kỳ, học thử,
+  miễn học phí, upload bill/R2, xác nhận Founder, QR và hóa đơn PDF.
+- Bổ sung đánh giá học viên theo yêu cầu Founder, thông báo theo vai trò và
+  lịch sử đánh giá không thể sửa sau khi Founder xác nhận.
+- Bổ sung quản trị account, khóa/kích hoạt/xóa, Bind Google OAuth, thông báo,
+  lưu phiên và các bản APK/AAB/Debug có số build riêng không ghi đè.
+
+### Thay đổi mới của build 112
+
+- Trong hồ sơ Cầu thủ học viên của Founder, thêm nút **Tạo PNG**. Ảnh được
+  xuất đúng kích thước **590 × 1004 px**, gồm ảnh học viên, họ tên, ngày sinh,
+  chiều cao, cân nặng và tên đội; dữ liệu tài khoản/phụ huynh không xuất vào ảnh.
+- Chỉ mở ba trạng thái bổ sung lịch cũ cho những buổi có ngày trước ngày tạo
+  lớp trong app; lịch học hiện tại dùng luồng điểm danh bình thường.
+- Sửa lỗi chuyển từ **Đã dạy (ghi nhận thủ công)** sang **Coach không dạy**:
+  lương Coach đang chờ được tính lại, không giữ số tiền cũ; trạng thái Founder
+  điểm danh thay không tạo lương Coach.
+- Đổi phiên bản Android sang **Release 3.1 build 112**, không thay đổi package
+  ID, D1, R2, secrets hoặc biến production.
+
 ## Release 3.0 — build 111 — 2026-08-17
 
 - Giữ nguyên toàn bộ sửa lỗi trạng thái lịch cũ và chu kỳ học phí của build 110;

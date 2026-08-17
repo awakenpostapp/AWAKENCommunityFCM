@@ -29,6 +29,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<MediaService>();
         builder.Services.AddSingleton<QrCodeService>();
         builder.Services.AddSingleton<IImageSaveService, AndroidImageSaveService>();
+        builder.Services.AddSingleton<IPlayerCardPngService, AndroidPlayerCardPngService>();
         builder.Services.AddSingleton<IReceiptPdfService, AndroidReceiptPdfService>();
         builder.Services.AddSingleton<AppNavigator>();
 
