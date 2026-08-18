@@ -26,4 +26,3 @@ GRANT EXECUTE ON FUNCTION private.current_app_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION private.is_current_tenant(text) TO authenticated;
 
 REVOKE ALL ON FUNCTION private.rls_auto_enable() FROM PUBLIC, anon, authenticated;
-

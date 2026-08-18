@@ -58,4 +58,3 @@ $$;
 
 REVOKE ALL ON FUNCTION public.d1_batch(JSONB) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.d1_batch(JSONB) TO service_role;
-
