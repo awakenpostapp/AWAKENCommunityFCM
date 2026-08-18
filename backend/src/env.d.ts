@@ -5,6 +5,7 @@ interface Env {
   ADMIN_BOOTSTRAP_SECRET: string;
   SUPABASE_URL?: string;
   SUPABASE_SECRET_KEY?: string;
+  DATA_BACKEND?: "d1" | "supabase";
   OAUTH_CALLBACK_URL?: string;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;

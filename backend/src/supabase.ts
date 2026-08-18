@@ -1,4 +1,5 @@
 import { json } from "./http";
+import { SupabaseD1Database } from "./supabase-d1";
 
 const SUPABASE_TIMEOUT_MS = 5_000;
 
@@ -33,7 +34,14 @@ export async function supabaseHealth(env: Env): Promise<Response> {
     if (!response.ok) {
       return json({ status: "degraded", backend: "supabase", code: "upstream_rejected" }, 502);
     }
-    return json({ status: "ok", backend: "supabase" });
+    const adapter = new SupabaseD1Database(env);
+    const row = await adapter.prepare("SELECT 1 AS ok").first<{ ok: number }>();
+    if (row?.ok !== 1) return json({ status: "degraded", backend: "supabase", code: "adapter_invalid" }, 502);
+    const tableCheck = await adapter.prepare("SELECT COUNT(*) AS count FROM users").first<{ count: number }>();
+    if (!tableCheck || Number(tableCheck.count) < 0) {
+      return json({ status: "degraded", backend: "supabase", code: "adapter_schema_invalid" }, 502);
+    }
+    return json({ status: "ok", backend: "supabase", adapter: "ok" });
   } catch {
     return json({ status: "degraded", backend: "supabase", code: "connection_failed" }, 502);
   } finally {

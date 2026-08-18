@@ -42,10 +42,11 @@ import {
   salaryDueDateForConfirmation,
 } from "./snapshot";
 import { consumeOAuthTicket, oauthCallback, oauthStart } from "./oauth";
+import { supabaseAuthExchange } from "./supabase-auth";
 
 type JsonObject = Record<string, unknown>;
 
-async function authBundle(env: Env, user: UserRow, tokens?: object): Promise<Record<string, unknown>> {
+export async function authBundle(env: Env, user: UserRow, tokens?: object): Promise<Record<string, unknown>> {
   const bundle = await getUserBundle(env, user.id);
   return {
     ...(tokens ?? {}),
@@ -55,6 +56,8 @@ async function authBundle(env: Env, user: UserRow, tokens?: object): Promise<Rec
     club: publicClub(bundle.club),
   };
 }
+
+export { supabaseAuthExchange };
 
 export async function setupAdmin(request: Request, env: Env): Promise<Response> {
   const supplied = request.headers.get("x-bootstrap-secret") ?? "";

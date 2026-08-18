@@ -17,6 +17,14 @@ SHA-256:
 
 `2083320C01FF603FF591E34B712C5FC2487F1FE35CC9E67548891B1DC1F07602`
 
+Backup cuối trước khi bật nguồn dữ liệu Supabase:
+
+`backups/cloudflare-d1-pre-supabase-cutover-20260818-213206/community-football-club-manager-d1.sql`
+
+SHA-256:
+
+`71B5136962D979601037BC713D0A25B0B25E9CFD66AEAC771E10A39A8D1BC078`
+
 The R2 bucket `community-football-club-manager-files` remains on Cloudflare
 and continues to hold private avatars, logos, selfies, bills and PDFs. The
 database stores its object keys, so no file path rewrite was performed.
@@ -39,10 +47,14 @@ sync cursors) were preserved as empty tables. SQLite's internal
 
 ## Cutover status
 
-Data migration is complete, but production has **not** been switched yet.
-Cloudflare D1 remains authoritative until the Worker is given a server-side
-Supabase secret and the Auth/Postgres adapter is tested. This prevents a client
-release from accidentally mixing the custom D1 password verifier with
-Supabase Auth or exposing a privileged key.
+Production is now running with `DATA_BACKEND=supabase` in the Cloudflare Worker.
+The mobile client continues to call the same `/v1` endpoints; the Worker keeps
+the privileged Supabase key server-side and uses the locked-down `d1_batch`
+RPC. R2 remains the private media store. D1 is retained as a read-only rollback
+snapshot and has not been deleted.
 
-Cloudflare Worker/R2 settings and production secrets were not changed.
+RLS is enabled on all public tables. Direct `anon`/`authenticated` table access
+is revoked; the service role is the only role allowed to execute the adapter
+RPC. Supabase Auth exchange is available at
+`POST /v1/auth/supabase/exchange` and only linked active accounts can obtain a
+Worker session.

@@ -1,5 +1,27 @@
 # Change log
 
+## Supabase production cutover — 2026-08-18
+
+- Đã thêm adapter D1-compatible gọi RPC `public.d1_batch` của Supabase; toàn bộ
+  route Worker hiện giữ nguyên contract `/v1` nhưng có thể chạy trên PostgreSQL
+  mà không đưa service key xuống Android.
+- Đã bật RLS cho các bảng public, khóa Data API trực tiếp với `anon`/
+  `authenticated`, chuyển helper `SECURITY DEFINER` vào schema private và giới
+  hạn RPC batch chỉ cho `service_role`. Security advisor sau migration không còn
+  cảnh báo.
+- Đã thêm bảng liên kết `auth_user_links` ở D1/Supabase và endpoint
+  `POST /v1/auth/supabase/exchange` để đổi Supabase Auth access token thành
+  phiên Worker hiện tại; token không được ghi log.
+- Đã tạo backup D1 ngay trước cutover tại
+  `backups/cloudflare-d1-pre-supabase-cutover-20260818-213206/` (SHA-256
+  `71B5136962D979601037BC713D0A25B0B25E9CFD66AEAC771E10A39A8D1BC078`).
+- Worker production đã chuyển `DATA_BACKEND=supabase` (version
+  `45c465fe-e415-485e-a246-6e764e70e1e8`). Smoke test `/health`, login,
+  `/v1/auth/me`, snapshot, club/classes/users/notifications/tuition/evaluations
+  đều trả thành công; logout và token Supabase không hợp lệ cũng được kiểm tra.
+- D1 và R2, cùng toàn bộ secrets/biến production, vẫn được giữ nguyên để
+  rollback; R2 tiếp tục là kho private cho media lớn.
+
 ## Supabase cutover preflight — 2026-08-18
 
 - Đã cấu hình `SUPABASE_URL` cho Worker production và xác nhận secret

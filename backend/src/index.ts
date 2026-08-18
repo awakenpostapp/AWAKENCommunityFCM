@@ -39,6 +39,7 @@ import {
   confirmParentPayment,
   setupAdmin,
   snapshot,
+  supabaseAuthExchange,
   submitProof,
   tuition,
   updateInvoiceCycles,
@@ -49,6 +50,7 @@ import {
 } from "./routes";
 import { cleanupExpiredSecurityRows, markMissedCoachCheckInsForAllTenants } from "./snapshot";
 import { supabaseHealth } from "./supabase";
+import { databaseForRequest } from "./supabase-d1";
 
 function match(pathname: string, pattern: RegExp): string[] | null {
   const result = pattern.exec(pathname);
@@ -70,6 +72,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (method === "GET" && path === "/v1/auth/oauth/start") return oauthStart(request, env);
   if (method === "GET" && path === "/v1/auth/oauth/callback") return oauthCallback(request, env);
   if (method === "POST" && path === "/v1/auth/oauth/exchange") return oauthExchange(request, env);
+  if (method === "POST" && path === "/v1/auth/supabase/exchange") return supabaseAuthExchange(request, env);
   if (method === "GET" && path === "/v1/auth/oauth/links") return oauthLinks(request, env);
   const oauthUnlinkParams = match(path, /^\/v1\/auth\/oauth\/links\/([^/]+)$/u);
   if (method === "DELETE" && oauthUnlinkParams) return oauthUnlink(request, env, oauthUnlinkParams[0]!);
@@ -168,7 +171,7 @@ export default {
       if (request.method === "OPTIONS") {
         response = new Response(null, { status: 204 });
       } else {
-        response = await route(request, env);
+        response = await route(request, databaseForRequest(env));
       }
     } catch (error) {
       response = errorResponse(error);
@@ -195,7 +198,8 @@ export default {
     return withCors(request, response, env);
   },
   async scheduled(_controller, env): Promise<void> {
-    await cleanupExpiredSecurityRows(env);
-    await markMissedCoachCheckInsForAllTenants(env);
+    const requestEnv = databaseForRequest(env);
+    await cleanupExpiredSecurityRows(requestEnv);
+    await markMissedCoachCheckInsForAllTenants(requestEnv);
   },
 } satisfies ExportedHandler<Env>;

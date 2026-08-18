@@ -16,12 +16,10 @@ Supabase migration history contains `cloudflare_legacy_schema_20260818`.
 The import was verified against the D1 export: 30 tables and 578 data rows
 (excluding the SQLite-only `sqlite_sequence` metadata row).
 
-The Cloudflare Worker remains the production source of truth during the
-cutover window. This is deliberate: the mobile client still speaks the
-Cloudflare `/v1` contract, and the Worker still owns the current custom
-password verifier and tenant RBAC. Do not switch or delete D1 until the
-Supabase Auth bridge and Worker database adapter have passed the cutover
-checks.
+The Worker still owns the `/v1` contract, custom password verifier and tenant
+RBAC, but production now uses Supabase PostgreSQL through the server-side
+D1-compatible adapter. D1 and R2 bindings remain configured for rollback and
+private media storage; D1 is not deleted.
 
 ## Files
 
@@ -31,17 +29,18 @@ checks.
   schema and import batches. Generated data batches are ignored by Git because
   they contain user/account metadata.
 
-## Next cutover requirements
+## Production cutover completed
 
-1. Provision a Cloudflare Worker secret named `SUPABASE_SECRET_KEY` (the
-   Supabase server-side secret key, never the publishable/anon key) and set
-   `SUPABASE_URL=https://yjapwstfawfdjxutczmd.supabase.co` as a non-secret var.
-2. Add the Auth bridge: create Supabase Auth identities, map them to the
-   imported `public.users` rows, and keep legacy password verification until
-   each user completes a password change.
-3. Add the Postgres/Data API repository adapter and dual-read validation.
-4. Run a write-free smoke test, then a short write cutover with D1 backup and
-   rollback ready.
+1. `SUPABASE_SECRET_KEY` is configured only as a Cloudflare Worker secret;
+   `SUPABASE_URL` is a non-secret Worker variable.
+2. `backend/src/supabase-d1.ts` translates the existing D1 repository contract
+   to the service-only `public.d1_batch` RPC.
+3. RLS/auth-link migrations are applied; private helpers are not exposed by the
+   Data API.
+4. `POST /v1/auth/supabase/exchange` bridges a verified Supabase Auth token to
+   the current Worker session and refuses unlinked accounts.
+5. Production smoke tests passed for health, login, session restore, snapshot,
+   club/classes/users/notifications/tuition/evaluations and logout.
 
 Never put a Supabase secret key, database password, or refresh token in the
 repository, APK, or mobile client.
