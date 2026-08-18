@@ -1,5 +1,22 @@
 # Change log
 
+Supabase/Cloudflare database audit - 2026-08-18
+
+- Xác nhận Worker production dùng Supabase làm source of truth; D1 giữ để
+  rollback và R2 giữ media private. /health và /health/supabase đều ok.
+- Smoke test các account Admin, Founder, Coach, Trainee: login, session,
+  đội, thành viên, lớp, điểm danh, học phí, đánh giá, thông báo, OAuth,
+  snapshot và media R2 đều đúng quyền; không có lỗi Worker/Auth/API/Storage
+  mới.
+- 31/31 bảng public bật RLS; public.d1_batch chỉ service_role được gọi;
+  Security Advisor sạch.
+- Kiểm tra tenant/foreign-key của toàn bộ dữ liệu nghiệp vụ: không có bản ghi
+  mồ côi hoặc liên kết chéo đội.
+- Thêm hai migration index khóa ngoại (20260818151219 và 20260818151255),
+  xóa toàn bộ cảnh báo unindexed_foreign_keys mức INFO.
+- Worker typecheck/build và Android compile đều pass; không đổi secrets,
+  binding D1/R2 hoặc dữ liệu nghiệp vụ.
+
 Release 3.1 - build 112 - 2026-08-17
 
 Tổng hợp thay đổi từ toàn bộ build Release 3.0:

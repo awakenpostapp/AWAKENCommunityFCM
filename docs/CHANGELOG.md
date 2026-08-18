@@ -1,5 +1,28 @@
 # Change log
 
+## Supabase/Cloudflare database audit — 2026-08-18
+
+- Kiểm tra lại Worker production và xác nhận `DATA_BACKEND=supabase`; D1 vẫn
+  được giữ làm phương án rollback, R2 vẫn là kho media private. `/health` và
+  `/health/supabase` đều trả `ok`.
+- Smoke test các luồng đọc chính của Admin, Founder, Coach và Trainee: đăng
+  nhập, khôi phục phiên, hồ sơ đội, thành viên, lớp, điểm danh, học phí,
+  đánh giá, thông báo, OAuth links, snapshot và media R2 đều hoạt động đúng
+  theo quyền. Không có lỗi Worker unhandled hoặc lỗi API/Storage/Auth mới.
+- Kiểm tra 31/31 bảng public đã bật RLS; `public.d1_batch` chỉ cho
+  `service_role` thực thi, `anon` và `authenticated` bị từ chối; Security
+  Advisor không còn cảnh báo.
+- Kiểm tra quan hệ tenant và khóa ngoại trên users/profiles/venues/classes,
+  phân công, buổi học, điểm danh, học phí, bill, hóa đơn, lương, đánh giá,
+  thông báo và upload: không có bản ghi mồ côi hoặc liên kết chéo đội.
+- Thêm migration `20260818151219_add_foreign_key_indexes` và
+  `20260818151255_add_payment_proof_invoice_fk_index` để xử lý 24 cảnh báo
+  khóa ngoại chưa có index riêng. Performance Advisor hiện không còn cảnh
+  báo `unindexed_foreign_keys`; các mục `unused_index` chỉ là INFO do dữ liệu
+  hiện tại còn ít và không ảnh hưởng tính đúng đắn.
+- Build/typecheck Worker và compile Android đều thành công; không thay đổi
+  secrets, D1/R2 bindings hay dữ liệu nghiệp vụ.
+
 ## Supabase production cutover — 2026-08-18
 
 - Đã thêm adapter D1-compatible gọi RPC `public.d1_batch` của Supabase; toàn bộ
