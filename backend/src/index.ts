@@ -48,6 +48,7 @@ import {
   uploads,
 } from "./routes";
 import { cleanupExpiredSecurityRows, markMissedCoachCheckInsForAllTenants } from "./snapshot";
+import { supabaseHealth } from "./supabase";
 
 function match(pathname: string, pattern: RegExp): string[] | null {
   const result = pattern.exec(pathname);
@@ -63,6 +64,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     const database = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
     return json({ status: database?.ok === 1 ? "ok" : "degraded", version: env.APP_API_VERSION, environment: env.APP_ENV });
   }
+  if (method === "GET" && path === "/health/supabase") return supabaseHealth(env);
   if (method === "POST" && path === "/v1/setup/admin") return setupAdmin(request, env);
   if (method === "POST" && path === "/v1/auth/register-founder") return registerFounder(request, env);
   if (method === "GET" && path === "/v1/auth/oauth/start") return oauthStart(request, env);

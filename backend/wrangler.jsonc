@@ -20,6 +20,7 @@
     "MAX_UPLOAD_BYTES": "10485760",
     "ALLOWED_ORIGINS": "",
     "ALLOW_PUBLIC_FOUNDER_REGISTRATION": "true",
+    "SUPABASE_URL": "https://yjapwstfawfdjxutczmd.supabase.co",
     "OAUTH_CALLBACK_URL": "https://community-football-club-manager-api.old-mud-b712.workers.dev/v1/auth/oauth/callback"
   },
   "d1_databases": [

@@ -1,5 +1,15 @@
 # Change log
 
+## Supabase cutover preflight — 2026-08-18
+
+- Đã cấu hình `SUPABASE_URL` cho Worker production và xác nhận secret
+  server-side `SUPABASE_SECRET_KEY` đã được nhận đúng tên; không ghi giá trị
+  secret vào source code, APK hoặc log.
+- Thêm endpoint chỉ đọc `/health/supabase` để kiểm tra kết nối Supabase;
+  preflight production trả về `status: ok`.
+- D1 và R2 vẫn là nguồn dữ liệu production trong giai đoạn dual-read chuẩn bị
+  cutover; chưa thay đổi dữ liệu, binding hoặc cơ chế đăng nhập hiện tại.
+
 ## Release 3.1 — build 112 — 2026-08-17
 
 ### Tổng hợp thay đổi từ toàn bộ build Release 3.0
