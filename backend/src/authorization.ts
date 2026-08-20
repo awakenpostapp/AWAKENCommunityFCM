@@ -8,6 +8,20 @@ export const TENANT_MEMBER_ROLES: readonly UserRole[] = [
   "coach",
   "trainee",
 ];
+export const CREATABLE_TENANT_USER_ROLES: readonly UserRole[] = [
+  "co_founder",
+  "manager",
+  "coach",
+  "trainee",
+];
+
+export function validateTenantUserRole(value: unknown): Exclude<UserRole, "admin" | "founder"> {
+  if (typeof value === "string"
+    && (CREATABLE_TENANT_USER_ROLES as readonly string[]).includes(value)) {
+    return value as Exclude<UserRole, "admin" | "founder">;
+  }
+  throw new Error("Role chỉ có thể là co_founder, manager, coach hoặc trainee.");
+}
 
 export function isFounderLike(role: UserRole | null | undefined): boolean {
   return role === "founder" || role === "co_founder";

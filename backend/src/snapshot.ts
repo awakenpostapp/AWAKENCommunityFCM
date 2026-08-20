@@ -5,6 +5,7 @@ import {
 } from "./domain";
 import { ApiError, optionalText, requireDateKey, requireInteger, requireText } from "./http";
 import { allRows, assertTenantEntity } from "./repository";
+import { isFounderLike } from "./authorization";
 
 type Row = Record<string, unknown>;
 
@@ -880,7 +881,7 @@ export async function getSnapshot(
   };
   const notifications = camelRows((identityBatch[3]?.results ?? []) as Row[]);
 
-  if (auth.role === "founder") {
+  if (isFounderLike(auth.role) || auth.role === "manager") {
     // These collections are independent reads.  D1 batch executes them in a
     // single database round-trip while preserving the same result order,
     // which is materially faster than fifteen concurrent service calls.
@@ -1223,7 +1224,8 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
     throw new ApiError(413, "too_many_changes", "Mỗi lần sync tối đa 100 thay đổi; client cần chia batch.");
   }
 
-  const importableUserRows = userRows.filter((row) => row.role === "coach" || row.role === "trainee");
+  const importableUserRows = userRows.filter((row) => row.role === "co_founder"
+    || row.role === "manager" || row.role === "coach" || row.role === "trainee");
   const incomingUserIds = new Set(importableUserRows.map((row) => String(row.id)));
   const incomingRoles = new Map(importableUserRows.map((row) => [String(row.id), String(row.role)]));
   const incomingVenueIds = new Set(venueRows.map((row) => String(row.id)));
@@ -1247,6 +1249,9 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
 
   const profileInput = body.currentProfile ?? body.profile;
   if (profileInput !== undefined) {
+    if (auth.role === "manager") {
+      throw new ApiError(403, "forbidden_profile_edit", "Manager chỉ được thực hiện các nghiệp vụ đã được cấp quyền.");
+    }
     if (!profileInput || typeof profileInput !== "object" || Array.isArray(profileInput)) {
       throw new ApiError(400, "validation_error", "profile không hợp lệ.");
     }
@@ -1270,7 +1275,7 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
     ));
   }
 
-  if (auth.role === "founder") {
+  if (isFounderLike(auth.role)) {
     const clubInput = body.activeClub ?? body.club;
     if (clubInput !== undefined) {
       if (!clubInput || typeof clubInput !== "object" || Array.isArray(clubInput)) {
@@ -1293,8 +1298,8 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
       // The current Founder and any Admin are server-authoritative and never
       // imported from an offline snapshot.
       if (role === "founder" || role === "admin") continue;
-      if (role !== "coach" && role !== "trainee") {
-        throw new ApiError(400, "validation_error", "Snapshot chỉ nhập Coach hoặc Trainee.");
+      if (role !== "co_founder" && role !== "manager" && role !== "coach" && role !== "trainee") {
+        throw new ApiError(400, "validation_error", "Snapshot chỉ nhập Co-Founder, Manager, Coach hoặc Trainee.");
       }
       const id = String(item.id);
       const username = requireText(item.username, "user.username", 80);
@@ -1554,7 +1559,7 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
     }
   }
 
-  if (auth.role !== "founder") {
+  if (!isFounderLike(auth.role)) {
     const privilegedCollections = [
       "users", "profiles", "venues", "classes", "classCoaches", "classEnrollments", "trainingSessions", "sessionCoaches",
       "tuitionInvoices", "coachSalaries", "notifications",
@@ -1584,7 +1589,7 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
          WHERE ci.tenant_id = ? AND ci.session_id = ? AND ci.coach_user_id = ? AND ci.checked_out_at IS NULL LIMIT 1`,
       ).bind(tenantId, sessionId, auth.id).first();
       if (!open) throw new ApiError(403, "checkin_required", "Coach chỉ điểm danh sau check-in và trước check-out.");
-    } else if (auth.role !== "founder") {
+    } else if (!isFounderLike(auth.role)) {
       throw new ApiError(403, "forbidden", "Học viên không được sửa điểm danh.");
     }
     const status = requireText(record.status, "attendance.status", 20);

@@ -10,6 +10,7 @@ import {
   nowIso,
   isCoachPositionKey,
 } from "./domain";
+import { validateTenantUserRole } from "./authorization";
 import { ApiError, optionalText, requireText } from "./http";
 
 export interface FounderInput {
@@ -103,10 +104,7 @@ export async function createTenantUser(
   const username = requireText(input.username, "Username", 80);
   const fullName = requireText(input.fullName, "Họ tên", 180);
   const email = optionalText(input.email, "Email", 200);
-  const role = input.role;
-  if (role !== "coach" && role !== "trainee") {
-    throw new ApiError(400, "validation_error", "Role chỉ có thể là coach hoặc trainee.");
-  }
+  const role = validateTenantUserRole(input.role);
   const coachPosition = role === "coach"
     ? optionalText(input.coachPosition, "Vị trí Coach", 80)
     : "";
