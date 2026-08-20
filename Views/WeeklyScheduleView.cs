@@ -1,4 +1,5 @@
 using CommunityFootballClubManager.Models;
+using CommunityFootballClubManager.Services;
 using CommunityFootballClubManager.Ui;
 using Microsoft.Maui.Controls.Shapes;
 
@@ -78,7 +79,7 @@ public static class WeeklyScheduleView
             }
         };
         titleRow.Children.Add(UiKit.Title(title));
-        if (role == UserRole.Founder && createClass is not null)
+        if (RoleCapabilities.CanCreateClasses(role) && createClass is not null)
         {
             var createButton = UiKit.SecondaryButton(
                 "Tạo lớp học",
@@ -346,7 +347,7 @@ public static class WeeklyScheduleView
         // Keep scheduled future days filled as "Chưa dạy" for Founder too.
         // The previous Founder-only early return made upcoming fixed classes
         // look like empty calendar cells.
-        if (role == UserRole.Founder && date.Date > DateTime.Today)
+        if (RoleCapabilities.IsFounderLike(role) && date.Date > DateTime.Today)
         {
             return DayStatus.NotTaught;
         }

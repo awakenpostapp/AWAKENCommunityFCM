@@ -26,19 +26,19 @@ public sealed class MemberManagementPage : AsyncContentPage
 
     protected override async Task LoadAsync()
     {
+        var actorRole = Session.CurrentUser?.Role;
+        var visibleRoles = RoleCapabilities.IsFounderLike(actorRole)
+            ? new[] { UserRole.Coach, UserRole.Trainee, UserRole.CoFounder, UserRole.Manager }
+            : new[] { UserRole.Coach, UserRole.Trainee };
         var members = (await _database.GetMembersAsync(CurrentUserId, includeInactive: true))
-            .Where(item => item.Account.Role is UserRole.Coach or UserRole.Trainee)
+            .Where(item => visibleRoles.Contains(item.Account.Role))
             .ToList();
-        var coaches = members
-            .Where(item => item.Account.Role == UserRole.Coach)
-            .ToList();
-        var trainees = members
-            .Where(item => item.Account.Role == UserRole.Trainee)
-            .ToList();
-        var addMember = UiKit.PrimaryButton(
-            "Thêm Huấn Luyện Viên/Cầu Thủ Học Viên",
-            async (_, _) => await PushPageAsync(
-                new MemberEditorPage(_database, Session, _media)));
+        var addMember = RoleCapabilities.CanManageMembers(actorRole)
+            ? UiKit.PrimaryButton(
+                "Thêm Huấn Luyện Viên/Cầu Thủ Học Viên",
+                async (_, _) => await PushPageAsync(
+                    new MemberEditorPage(_database, Session, _media)))
+            : null;
 
         var root = new VerticalStackLayout
         {
@@ -46,12 +46,17 @@ public sealed class MemberManagementPage : AsyncContentPage
             Spacing = UiKit.SectionSpacing,
             Children =
             {
-                UiKit.OfflineBanner(),
-                addMember,
-                CreateRoleCard(UserRole.Coach, coaches),
-                CreateRoleCard(UserRole.Trainee, trainees)
+                UiKit.OfflineBanner()
             }
         };
+        if (addMember is not null)
+        {
+            root.Children.Add(addMember);
+        }
+        foreach (var role in visibleRoles)
+        {
+            root.Children.Add(CreateRoleCard(role, members.Where(item => item.Account.Role == role).ToList()));
+        }
         Content = UiKit.KeyboardAwareScroll(root);
     }
 
@@ -74,7 +79,11 @@ public sealed class MemberManagementPage : AsyncContentPage
 
         var count = UiKit.StatusBadge(
             $"{members.Count} account",
-            role == UserRole.Coach ? UiKit.Primary : UiKit.Success);
+            role == UserRole.Coach
+                ? UiKit.Primary
+                : role == UserRole.Trainee
+                    ? UiKit.Success
+                    : UiKit.Warning);
         Grid.SetColumn(count, 1);
         header.Children.Add(count);
 
@@ -116,7 +125,14 @@ public sealed class MemberManagementPage : AsyncContentPage
     }
 
     private static string RoleTitle(UserRole role) =>
-        role == UserRole.Coach ? "Huấn Luyện Viên" : "Cầu Thủ Học Viên";
+        role switch
+        {
+            UserRole.Coach => "Huấn Luyện Viên",
+            UserRole.Trainee => "Cầu Thủ Học Viên",
+            UserRole.CoFounder => "Đồng Sáng Lập",
+            UserRole.Manager => "Quản Lý",
+            _ => DomainText.Role(role)
+        };
 }
 
 public sealed class MemberRoleListPage : AsyncContentPage
@@ -140,7 +156,7 @@ public sealed class MemberRoleListPage : AsyncContentPage
         UserRole role)
         : base(session, RoleTitle(role))
     {
-        if (role is not (UserRole.Coach or UserRole.Trainee))
+        if (role is not (UserRole.Coach or UserRole.Trainee or UserRole.CoFounder or UserRole.Manager))
         {
             throw new ArgumentOutOfRangeException(nameof(role));
         }
@@ -329,7 +345,14 @@ public sealed class MemberRoleListPage : AsyncContentPage
     private sealed record TraineeTuitionSummary(int PaidCycles, int AttendedSessions);
 
     private static string RoleTitle(UserRole role) =>
-        role == UserRole.Coach ? "Huấn Luyện Viên" : "Cầu Thủ Học Viên";
+        role switch
+        {
+            UserRole.Coach => "Huấn Luyện Viên",
+            UserRole.Trainee => "Cầu Thủ Học Viên",
+            UserRole.CoFounder => "Đồng Sáng Lập",
+            UserRole.Manager => "Quản Lý",
+            _ => DomainText.Role(role)
+        };
 }
 
 public sealed class MemberProfilePage : AsyncContentPage
@@ -355,7 +378,7 @@ public sealed class MemberProfilePage : AsyncContentPage
 
     protected override async Task LoadAsync()
     {
-        var includeInactive = Session.CurrentUser?.Role == UserRole.Founder;
+        var includeInactive = RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role);
         var member = (await _database.GetMembersAsync(
                 CurrentUserId,
                 includeInactive: includeInactive))
@@ -396,7 +419,7 @@ public sealed class MemberProfilePage : AsyncContentPage
                 UiKit.Body($"Chiều cao: {Dimension(member.Profile.HeightCm, "cm")}"));
             details.Children.Add(
                 UiKit.Body($"Cân nặng: {Dimension(member.Profile.WeightKg, "kg")}"));
-            if (Session.CurrentUser?.Role == UserRole.Founder
+            if (RoleCapabilities.CanManageMembers(Session.CurrentUser?.Role)
                 || CurrentUserId == member.Account.Id)
             {
                 details.Children.Add(
@@ -431,7 +454,7 @@ public sealed class MemberProfilePage : AsyncContentPage
             }
         };
 
-        if (Session.CurrentUser?.Role == UserRole.Founder
+        if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
             && member.Account.Role == UserRole.Trainee
             && Application.Current?.Handler?.MauiContext?.Services is { } cardServices
             && cardServices.GetService<IPlayerCardPngService>() is { } cardPng
@@ -460,7 +483,7 @@ public sealed class MemberProfilePage : AsyncContentPage
             root.Children.Add(evaluations);
         }
 
-        if (Session.CurrentUser?.Role == UserRole.Founder
+        if (RoleCapabilities.CanApproveOperations(Session.CurrentUser?.Role)
             && member.Account.Role is UserRole.Coach or UserRole.Trainee)
         {
             root.Children.Add(UiKit.StatusBadge(
@@ -510,7 +533,7 @@ public sealed class MemberProfilePage : AsyncContentPage
             }
         }
 
-        if (Session.CurrentUser?.Role == UserRole.Founder
+        if (RoleCapabilities.CanApproveOperations(Session.CurrentUser?.Role)
             && member.Account.Role == UserRole.Trainee
             && await CanShowFounderParentPaymentAsync(member)
             && Application.Current?.Handler?.MauiContext?.Services is { } services)
@@ -537,9 +560,10 @@ public sealed class MemberProfilePage : AsyncContentPage
         }
 
         var canEditAsFounder =
-            Session.CurrentUser?.Role == UserRole.Founder
-            && member.Account.Role is UserRole.Coach or UserRole.Trainee;
-        var canEditSelf = CurrentUserId == member.Account.Id;
+            RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
+            && member.Account.Role != UserRole.Admin;
+        var canEditSelf = CurrentUserId == member.Account.Id
+                          && Session.CurrentUser?.Role != UserRole.Manager;
         if (canEditAsFounder || canEditSelf)
         {
             var edit = UiKit.PrimaryButton("Sửa hồ sơ");
@@ -951,6 +975,7 @@ public sealed class MemberEditorPage : ContentPage
     private readonly SessionService _session;
     private readonly MediaService _media;
     private readonly MemberRow? _existing;
+    private readonly IReadOnlyList<UserRole> _roleOptions;
     private readonly Picker _role;
     private readonly Entry _username;
     private readonly Entry _fullName;
@@ -981,11 +1006,21 @@ public sealed class MemberEditorPage : ContentPage
         Title = existing is null ? "Tạo account" : "Sửa hồ sơ";
         BackgroundColor = UiKit.Background;
 
+        var actorRole = _session.CurrentUser?.Role;
+        _roleOptions = RoleCapabilities.IsFounderLike(actorRole)
+            ? [UserRole.Coach, UserRole.Trainee, UserRole.CoFounder, UserRole.Manager]
+            : [UserRole.Coach, UserRole.Trainee];
         _role = new Picker { Title = "Chọn vai trò" };
-        _role.Items.Add("Huấn luyện viên");
-        _role.Items.Add("Cầu thủ học viên");
         var selectedRole = existing?.Account.Role ?? initialRole ?? UserRole.Coach;
-        _role.SelectedIndex = selectedRole == UserRole.Trainee ? 1 : 0;
+        if (!_roleOptions.Contains(selectedRole))
+        {
+            selectedRole = UserRole.Coach;
+        }
+        foreach (var roleOption in _roleOptions)
+        {
+            _role.Items.Add(DomainText.Role(roleOption));
+        }
+        _role.SelectedIndex = _roleOptions.ToList().IndexOf(selectedRole);
         _role.IsEnabled = existing is null;
 
         _coachPosition = new Picker
@@ -1083,20 +1118,21 @@ public sealed class MemberEditorPage : ContentPage
                 UiKit.LabeledField("SĐT NGƯỜI GIÁM HỘ", _guardianPhone)
             }
         };
-        traineeFields.IsVisible = _role.SelectedIndex == 1;
+        traineeFields.IsVisible = SelectedRole() == UserRole.Trainee;
         var tuitionSupportField = BuildTuitionSupportField();
-        tuitionSupportField.IsVisible = _role.SelectedIndex == 1;
+        tuitionSupportField.IsVisible = SelectedRole() == UserRole.Trainee;
         var phoneField = UiKit.LabeledField("SỐ ĐIỆN THOẠI", _phone);
-        phoneField.IsVisible = _role.SelectedIndex == 0;
+        phoneField.IsVisible = SelectedRole() is UserRole.Coach or UserRole.CoFounder or UserRole.Manager;
         var coachPositionField = UiKit.LabeledField("VỊ TRÍ DẠY", _coachPosition);
-        coachPositionField.IsVisible = _role.SelectedIndex == 0;
+        coachPositionField.IsVisible = SelectedRole() == UserRole.Coach;
         _role.SelectedIndexChanged += (_, _) =>
         {
-            traineeFields.IsVisible = _role.SelectedIndex == 1;
-            phoneField.IsVisible = _role.SelectedIndex == 0;
-            coachPositionField.IsVisible = _role.SelectedIndex == 0;
-            tuitionSupportField.IsVisible = _role.SelectedIndex == 1;
-            if (_role.SelectedIndex != 1)
+            var role = SelectedRole();
+            traineeFields.IsVisible = role == UserRole.Trainee;
+            phoneField.IsVisible = role is UserRole.Coach or UserRole.CoFounder or UserRole.Manager;
+            coachPositionField.IsVisible = role == UserRole.Coach;
+            tuitionSupportField.IsVisible = role == UserRole.Trainee;
+            if (role != UserRole.Trainee)
             {
                 _tuitionSupported.IsToggled = false;
             }
@@ -1177,7 +1213,7 @@ public sealed class MemberEditorPage : ContentPage
         source.IsEnabled = false;
         try
         {
-            var role = _role.SelectedIndex == 1 ? UserRole.Trainee : UserRole.Coach;
+            var role = SelectedRole();
             var coachPosition = role == UserRole.Coach ? SelectedCoachPositionKey() : string.Empty;
             if (_existing is null)
             {
@@ -1189,16 +1225,25 @@ public sealed class MemberEditorPage : ContentPage
                     _email.Text ?? string.Empty,
                     role == UserRole.Trainee ? string.Empty : _phone.Text ?? string.Empty,
                     isTuitionSupported: role == UserRole.Trainee && _tuitionSupported.IsToggled,
-                    coachPosition: coachPosition);
-                var profile = await _database.GetProfileAsync(account.Id);
-                ApplyProfileFields(profile);
-                await _database.SaveProfileAsync(CurrentFounderId, profile);
+                    coachPosition: coachPosition,
+                    guardianName: role == UserRole.Trainee ? _guardianName.Text ?? string.Empty : string.Empty,
+                    guardianPhone: role == UserRole.Trainee ? _guardianPhone.Text ?? string.Empty : string.Empty);
+                // The online create endpoint persists the complete profile in
+                // one transaction.  A Manager is intentionally not allowed to
+                // issue a follow-up profile mutation.
+                if (_session.CurrentUser?.Role != UserRole.Manager)
+                {
+                    var profile = await _database.GetProfileAsync(account.Id);
+                    ApplyProfileFields(profile);
+                    await _database.SaveProfileAsync(CurrentFounderId, profile);
+                }
             }
             else
             {
                 ApplyProfileFields(_existing.Profile);
                 await _database.SaveProfileAsync(CurrentFounderId, _existing.Profile);
-                if (_existing.Account.Role == UserRole.Trainee)
+                if (_existing.Account.Role == UserRole.Trainee
+                    && RoleCapabilities.IsFounderLike(_session.CurrentUser?.Role))
                 {
                     await _database.SetTuitionSupportAsync(
                         CurrentFounderId,
@@ -1222,16 +1267,17 @@ public sealed class MemberEditorPage : ContentPage
 
     private void ApplyProfileFields(PersonProfile profile)
     {
+        var role = SelectedRole();
         profile.FullName = _fullName.Text ?? string.Empty;
         profile.Email = _email.Text ?? string.Empty;
-        profile.Phone = _role.SelectedIndex == 1
+        profile.Phone = role == UserRole.Trainee
             ? string.Empty
             : _phone.Text ?? string.Empty;
-        profile.CoachPosition = _role.SelectedIndex == 0
+        profile.CoachPosition = role == UserRole.Coach
             ? SelectedCoachPositionKey()
             : string.Empty;
         profile.PhotoPath = _photoPath;
-        if (_role.SelectedIndex == 1)
+        if (role == UserRole.Trainee)
         {
             profile.DateOfBirth = _dateOfBirth.Date?.Date;
             profile.HeightCm = ParseDouble(_height.Text);
@@ -1240,6 +1286,11 @@ public sealed class MemberEditorPage : ContentPage
             profile.GuardianPhone = _guardianPhone.Text ?? string.Empty;
         }
     }
+
+    private UserRole SelectedRole() =>
+        _role.SelectedIndex >= 0 && _role.SelectedIndex < _roleOptions.Count
+            ? _roleOptions[_role.SelectedIndex]
+            : UserRole.Coach;
 
     private View BuildTuitionSupportField()
     {

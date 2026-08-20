@@ -5,7 +5,9 @@ public enum UserRole
     Founder = 1,
     Coach = 2,
     Trainee = 3,
-    Admin = 4
+    Admin = 4,
+    CoFounder = 5,
+    Manager = 6
 }
 
 public enum ExternalAuthProvider
@@ -138,6 +140,8 @@ public static class DomainText
     public static string Role(UserRole role) => role switch
     {
         UserRole.Founder => "Sáng lập & Điều hành",
+        UserRole.CoFounder => "Đồng Sáng Lập",
+        UserRole.Manager => "Quản Lý",
         UserRole.Coach => "Huấn luyện viên",
         UserRole.Trainee => "Cầu thủ học viên",
         UserRole.Admin => "Quản trị hệ thống",

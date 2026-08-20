@@ -1,5 +1,24 @@
 # Change log
 
+Release 3.3 - build 115 - 2026-08-20
+
+- Them vai tro Dong Sang Lap (Co-Founder): giao dien va quyen Founder, nhung
+  khong duoc xoa account Co-Founder khac.
+- Them vai tro Quan Ly (Manager) voi pham vi gioi han: tao Coach/Trainee, tao
+  lop moi, duyet check-in/check-out Coach, duyet bill hoc phi, dong hoc phi
+  thay phu huynh va duyet luong Coach. Manager khong sua ho so, thong tin doi,
+  trang thai account, audit history hoac xoa du lieu.
+- Dong bo bang quyen Android, Worker authorization, snapshot sync va D1;
+  Manager chi dong bo lop moi, khong sua lop da ton tai.
+- Them migration Supabase cho role moi va helper RLS; snapshot Manager duoc
+  thu gon theo least-privilege, khong tra Founder/Co-Founder hoac audit history.
+- Them man hinh Tong quan/Tai chinh/Xu ly rieng cho Manager; Founder va
+  Co-Founder van dung day du man hinh Founder.
+- Bo sung test role/schema/route authorization; Worker typecheck/build va
+  Android compile deu dat.
+- Giu nguyen ApplicationId, database, Cloudflare, Supabase, R2, OAuth va du
+  lieu nghiep vu hien co. Chi tang so build tu 114 len 115.
+
 Release 3.3 - build 114 - 2026-08-20
 
 - Thay logo splash/loading bằng AWAKEN-COMMUNITY-FCM-VERTICAL-LOGO; bỏ dòng

@@ -16,6 +16,7 @@ import {
   AuthUser,
   ClubRow,
   ProfileRow,
+  UserRole,
   UserRow,
   newId,
   normalizeEmail,
@@ -44,6 +45,15 @@ import {
 } from "./snapshot";
 import { consumeOAuthTicket, oauthCallback, oauthStart } from "./oauth";
 import { supabaseAuthExchange } from "./supabase-auth";
+import {
+  assertCanApproveOperations,
+  assertCanChangeAccountStatus,
+  assertCanCreateClass,
+  assertCanCreateMember,
+  assertCanDeleteTarget,
+  assertCanEditMemberProfile,
+} from "./route-authorization";
+import { CREATABLE_TENANT_USER_ROLES, isFounderLike } from "./authorization";
 
 type JsonObject = Record<string, unknown>;
 
@@ -459,8 +469,14 @@ export async function members(request: Request, env: Env): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
   if (request.method === "POST") {
-    requireRole(auth, "founder");
-    const user = await createTenantUser(env, tenantId, await readJson<JsonObject>(request));
+    const body = await readJson<JsonObject>(request);
+    const roleValue = body.role;
+    if (typeof roleValue !== "string"
+      || !(CREATABLE_TENANT_USER_ROLES as readonly string[]).includes(roleValue)) {
+      throw new ApiError(400, "validation_error", "Role account không hợp lệ.");
+    }
+    assertCanCreateMember(auth.role, roleValue as UserRole);
+    const user = await createTenantUser(env, tenantId, body);
     await audit(env, tenantId, auth.id, "member.created", "user", user.id, { role: user.role });
     return json(await authBundle(env, user), 201);
   }
@@ -470,9 +486,10 @@ export async function members(request: Request, env: Env): Promise<Response> {
     const snapshot = await getSnapshot(env, auth);
     return json({ users: snapshot.users, profiles: snapshot.profiles });
   }
+  const managerScope = auth.role === "manager" ? " AND u.role IN ('coach', 'trainee')" : "";
   const rows = await allRows<UserRow & { full_name: string }>(env.DB.prepare(
     `SELECT u.*, p.full_name FROM users u LEFT JOIN profiles p ON p.user_id = u.id
-     WHERE u.tenant_id = ? AND u.role <> 'admin' AND (? IS NULL OR u.role = ?) ORDER BY p.full_name`,
+     WHERE u.tenant_id = ? AND u.role <> 'admin'${managerScope} AND (? IS NULL OR u.role = ?) ORDER BY p.full_name`,
   ).bind(tenantId, filter, filter));
   return json({ members: rows.map((row) => ({ ...publicUser(row), fullName: row.full_name })) });
 }
@@ -480,7 +497,12 @@ export async function members(request: Request, env: Env): Promise<Response> {
 export async function updateProfile(request: Request, env: Env, userId: string): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
-  if (auth.id !== userId && auth.role !== "founder") throw new ApiError(403, "forbidden", "Không được sửa hồ sơ này.");
+  if (auth.role === "manager") {
+    throw new ApiError(403, "forbidden_profile_edit", "Manager không được sửa hồ sơ.");
+  }
+  if (auth.id !== userId && !isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden", "Không được sửa hồ sơ này.");
+  }
   await assertTenantEntity(env, "users", userId, tenantId);
   const body = await readJson<JsonObject>(request);
   const existing = await env.DB.prepare(
@@ -489,6 +511,8 @@ export async function updateProfile(request: Request, env: Env, userId: string):
   if (!existing) throw new ApiError(404, "not_found", "Không tìm thấy hồ sơ.");
   const target = await env.DB.prepare("SELECT role FROM users WHERE id=? AND tenant_id=? LIMIT 1")
     .bind(userId, tenantId).first<{ role: string }>();
+  if (!target) throw new ApiError(404, "not_found", "Không tìm thấy thành viên.");
+  if (auth.id !== userId) assertCanEditMemberProfile(auth.role, target.role as UserRole);
   const coachPosition = target?.role === "coach"
     ? optionalText(body.coachPosition, "coachPosition", 80)
     : "";
@@ -519,10 +543,12 @@ export async function manageMember(
   action: "password" | "status" | "tuitionSupport",
 ): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_member_management", "Chỉ Founder hoặc Co-Founder được quản lý account.");
+  }
   const tenantId = requireTenant(auth);
   const target = await env.DB.prepare(
-    "SELECT * FROM users WHERE id=? AND tenant_id=? AND role IN ('coach','trainee') LIMIT 1",
+    "SELECT * FROM users WHERE id=? AND tenant_id=? AND role IN ('co_founder','manager','coach','trainee') LIMIT 1",
   ).bind(userId, tenantId).first<UserRow>();
   if (!target) throw new ApiError(404, "not_found", "Không tìm thấy thành viên.");
   const body = await readJson<JsonObject>(request);
@@ -539,6 +565,7 @@ export async function manageMember(
     return noContent();
   }
   if (action === "status") {
+    assertCanChangeAccountStatus(auth.role, target.role as UserRole);
     if (typeof body.isActive !== "boolean") throw new ApiError(400, "validation_error", "isActive phải là boolean.");
     await env.DB.batch([
       env.DB.prepare("UPDATE users SET is_active=?, updated_at=? WHERE id=? AND tenant_id=?")
@@ -550,6 +577,7 @@ export async function manageMember(
     await audit(env, tenantId, auth.id, "member.status_changed", "user", userId, { isActive: body.isActive });
     return noContent();
   }
+  assertCanChangeAccountStatus(auth.role, target.role as UserRole);
   const password = body.password === undefined ? "12345678" : validatePassword(body.password);
   const next = await hashPassword(password);
   await env.DB.batch([
@@ -569,7 +597,9 @@ export async function club(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET") {
     return json({ club: publicClub(await env.DB.prepare("SELECT * FROM clubs WHERE tenant_id=?").bind(tenantId).first<ClubRow>()) });
   }
-  requireRole(auth, "founder");
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_club_edit", "Chỉ Founder hoặc Co-Founder được chỉnh sửa thông tin đội.");
+  }
   const body = await readJson<JsonObject>(request);
   const existing = await env.DB.prepare(
     "SELECT * FROM clubs WHERE tenant_id=? LIMIT 1",
@@ -598,7 +628,7 @@ export async function classes(request: Request, env: Env): Promise<Response> {
     return json({ classes: snapshot.classes, venues: snapshot.venues,
       classCoaches: snapshot.classCoaches, classEnrollments: snapshot.classEnrollments });
   }
-  requireRole(auth, "founder");
+  assertCanCreateClass(auth.role);
   const body = await readJson<JsonObject>(request);
   const id = newId();
   const venueId = body.venueId ? requireText(body.venueId, "venueId", 64) : null;
@@ -747,6 +777,15 @@ async function activeUsersByRole(
   ).bind(tenantId, role));
 }
 
+async function activeFounderLikeUsers(
+  env: Env,
+  tenantId: string,
+): Promise<Array<{ id: string }>> {
+  return allRows<{ id: string }>(env.DB.prepare(
+    "SELECT id FROM users WHERE tenant_id=? AND role IN ('founder','co_founder') AND is_active=1",
+  ).bind(tenantId));
+}
+
 function notificationInsertIfMissing(
   env: Env,
   tenantId: string,
@@ -804,7 +843,7 @@ async function notifyEvaluationSubmitted(
   tenantId: string,
   row: EvaluationRow,
 ): Promise<void> {
-  const founders = await activeUsersByRole(env, tenantId, "founder");
+  const founders = await activeFounderLikeUsers(env, tenantId);
   if (founders.length === 0) return;
 
   // Include updated_at so a rejected evaluation that is corrected and sent
@@ -850,7 +889,7 @@ async function notifyEvaluationClassCompleted(
   ).bind(tenantId, classId).first();
   if (alreadySent) return;
 
-  const founders = await activeUsersByRole(env, tenantId, "founder");
+  const founders = await activeFounderLikeUsers(env, tenantId);
   if (founders.length === 0) return;
   const now = nowIso();
   await env.DB.batch(founders.map((founder) => env.DB.prepare(
@@ -873,7 +912,9 @@ export async function evaluationRequest(
 ): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
-  requireRole(auth, "founder");
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_evaluation_request", "Chỉ Founder hoặc Co-Founder được mở yêu cầu đánh giá.");
+  }
   const body = await readJson<JsonObject>(request);
   if (typeof body.isOpen !== "boolean") {
     throw new ApiError(400, "validation_error", "isOpen phải là boolean.");
@@ -1141,7 +1182,9 @@ export async function reviewEvaluation(
 ): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
-  requireRole(auth, "founder");
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_evaluation_review", "Chỉ Founder hoặc Co-Founder được xác nhận đánh giá.");
+  }
   const current = await getEvaluationRow(env, tenantId, evaluationId);
   const body = await readJson<JsonObject>(request);
   if (typeof body.approved !== "boolean") {
@@ -1204,7 +1247,9 @@ export async function deleteClass(
 ): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
-  requireRole(auth, "founder");
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_class_delete", "Chỉ Founder hoặc Co-Founder được xóa lớp học.");
+  }
   const existing = await env.DB.prepare(
     "SELECT id, name FROM classes WHERE id = ? AND tenant_id = ? LIMIT 1",
   ).bind(classId, tenantId).first<{ id: string; name: string }>();
@@ -1254,10 +1299,12 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       "SELECT * FROM attendance_records WHERE tenant_id=? AND session_id=?",
     ).bind(tenantId, actualSessionId)) });
   }
-  requireRole(auth, "coach", "founder");
+  if (auth.role !== "coach" && !isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_attendance", "Role hiện tại không được điểm danh.");
+  }
   const body = await readJson<JsonObject>(request);
   const submit = body.submit === true;
-  const founderNoAttendance = auth.role === "founder" && body.founderNoAttendance === true;
+  const founderNoAttendance = isFounderLike(auth.role) && body.founderNoAttendance === true;
   if (body.submit !== undefined && typeof body.submit !== "boolean") {
     throw new ApiError(400, "validation_error", "submit phải là boolean.");
   }
@@ -1298,7 +1345,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       }
     }
     if (founderNoAttendance) {
-      if (auth.role === "founder" && !optionalText(body.overrideReason, "overrideReason", 500)) {
+      if (isFounderLike(auth.role) && !optionalText(body.overrideReason, "overrideReason", 500)) {
         throw new ApiError(400, "override_reason_required", "Founder cần nhập lý do khi điểm danh thay.");
       }
     }
@@ -1323,7 +1370,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
     if (!founderNoAttendance && (missing || incomingIds.size !== expected.length)) {
       throw new ApiError(400, "attendance_incomplete", "Vui lòng ghi nhận trạng thái cho tất cả học viên.");
     }
-    if (auth.role === "founder" && !optionalText(body.overrideReason, "overrideReason", 500)) {
+    if (isFounderLike(auth.role) && !optionalText(body.overrideReason, "overrideReason", 500)) {
       throw new ApiError(400, "override_reason_required", "Founder cần nhập lý do khi điểm danh thay.");
     }
   }
@@ -1332,11 +1379,11 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
     : await applySnapshot(env, auth, { attendanceRecords: body.records ?? [] });
   if (submit) {
     const now = nowIso();
-    const rawOverrideReason = auth.role === "founder"
+    const rawOverrideReason = isFounderLike(auth.role)
       ? optionalText(body.overrideReason, "overrideReason", 500)
       : "";
-    const coachTaughtManually = auth.role === "founder" && body.coachTaughtManually === true;
-    const overrideReason = auth.role === "founder"
+    const coachTaughtManually = isFounderLike(auth.role) && body.coachTaughtManually === true;
+    const overrideReason = isFounderLike(auth.role)
       ? canonicalHistoricalOverrideReason(
         rawOverrideReason,
         founderNoAttendance
@@ -1370,7 +1417,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       ).bind(auth.id, now, now, overrideReason, actualSessionId, tenantId).run();
     }
 
-    if (auth.role === "founder" && !coachTaughtManually && !founderNoAttendance) {
+    if (isFounderLike(auth.role) && !coachTaughtManually && !founderNoAttendance) {
       // A Founder can deliver the class when the assigned Coach did not.
       // Keep an explicit, non-payable history row so the class remains
       // completed while the Coach timeline records “Coach không dạy”.
@@ -1422,7 +1469,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
         }
       }
     }
-    else if (auth.role === "founder" && coachTaughtManually) {
+    else if (isFounderLike(auth.role) && coachTaughtManually) {
       // Historical classes may have been taught before the app was deployed.
       // A Founder can explicitly record that lesson as Coach-taught.  These
       // rows are approved/payable immediately, while retaining empty selfie
@@ -1583,10 +1630,10 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
     "training_session", actualSessionId,
     {
       submit,
-      coachTaughtManually: auth.role === "founder" && body.coachTaughtManually === true,
+      coachTaughtManually: isFounderLike(auth.role) && body.coachTaughtManually === true,
       founderNoAttendance,
       founderNoAttendanceMarker: founderNoAttendance ? FOUNDER_NO_ATTENDANCE_REVIEW_NOTE : "",
-      overrideReason: auth.role === "founder" ? optionalText(body.overrideReason, "overrideReason", 500) : "",
+      overrideReason: isFounderLike(auth.role) ? optionalText(body.overrideReason, "overrideReason", 500) : "",
     });
   return json(result);
 }
@@ -1688,7 +1735,7 @@ export async function checkIn(request: Request, env: Env): Promise<Response> {
   await env.DB.prepare(
     `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
      SELECT ?, ?, id, 'coach_checkin', 'Chờ duyệt check-in', 'Huấn luyện viên đã gửi ảnh check-in.', ?, ?
-     FROM users WHERE tenant_id=? AND role='founder' AND is_active=1`,
+      FROM users WHERE tenant_id=? AND role IN ('founder', 'co_founder', 'manager') AND is_active=1`,
   ).bind(newId(), tenantId, savedId, now, tenantId).run();
   await audit(env, tenantId, auth.id, "coach.checkin_submitted", "coach_checkin", savedId,
     { sessionId, checkedInAt: now });
@@ -1742,7 +1789,7 @@ export async function checkOut(request: Request, env: Env): Promise<Response> {
     `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
      SELECT ?, ?, id, 'coach_checkin', 'Chờ xác nhận check-out',
        'Huấn luyện viên đã gửi đủ ảnh check-in và check-out. Vui lòng kiểm tra để xác nhận và tính lương.', ?, ?
-     FROM users WHERE tenant_id=? AND role='founder' AND is_active=1`,
+      FROM users WHERE tenant_id=? AND role IN ('founder', 'co_founder', 'manager') AND is_active=1`,
   ).bind(newId(), tenantId, openCheckIn.id, now, tenantId).run();
   await audit(env, tenantId, auth.id, "coach.checkout_submitted", "coach_checkin", openCheckIn.id,
     { sessionId, checkedOutAt: now, durationSeconds });
@@ -1751,7 +1798,7 @@ export async function checkOut(request: Request, env: Env): Promise<Response> {
 
 export async function reviewCheckIn(request: Request, env: Env, id: string): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  assertCanApproveOperations(auth.role);
   const tenantId = requireTenant(auth);
   const body = await readJson<JsonObject>(request);
   const status = requireText(body.status, "status", 20);
@@ -1801,7 +1848,7 @@ export async function reviewCheckIn(request: Request, env: Env, id: string): Pro
   ).bind(
     newId(), tenantId,
     status === "approved" ? "Check-in đã được xác nhận" : "Check-in bị từ chối",
-    status === "approved" ? "Check-in đã được Founder xác nhận và được tính lương." : "Vui lòng chụp lại selfie check-in.",
+    status === "approved" ? "Check-in đã được người duyệt xác nhận và được tính lương." : "Vui lòng chụp lại selfie check-in.",
     id, now, id, tenantId,
   ).run();
   await audit(env, tenantId, auth.id,
@@ -1841,7 +1888,7 @@ export async function checkInSelfieImage(
   if (!row || !row.checkin_selfie_object_key) {
     throw new ApiError(404, "not_found", "Không tìm thấy selfie check-in.");
   }
-  if (auth.role !== "founder" && auth.id !== row.coach_user_id) {
+  if (!isFounderLike(auth.role) && auth.role !== "manager" && auth.id !== row.coach_user_id) {
     throw new ApiError(403, "forbidden", "Bạn không được xem selfie check-in này.");
   }
 
@@ -1885,7 +1932,7 @@ export async function checkOutSelfieImage(
   if (!row || !row.checkout_selfie_object_key) {
     throw new ApiError(404, "not_found", "Không tìm thấy selfie check-out.");
   }
-  if (auth.role !== "founder" && auth.id !== row.coach_user_id) {
+  if (!isFounderLike(auth.role) && auth.role !== "manager" && auth.id !== row.coach_user_id) {
     throw new ApiError(403, "forbidden", "Bạn không được xem selfie check-out này.");
   }
 
@@ -1924,7 +1971,7 @@ export async function profileAvatar(
   ).bind(userId, tenantId).first<{ role: string; photo_object_key: string | null }>();
   if (!target || !target.photo_object_key) throw new ApiError(404, "not_found", "Không tìm thấy ảnh hồ sơ.");
 
-  let allowed = auth.role === "founder" || auth.id === userId || target.role === "founder";
+  let allowed = isFounderLike(auth.role) || auth.role === "manager" || auth.id === userId || target.role === "founder";
   if (!allowed && auth.role === "coach") {
     const shared = await env.DB.prepare(
       `SELECT 1
@@ -2002,7 +2049,7 @@ export async function tuition(request: Request, env: Env): Promise<Response> {
     if (auth.role === "coach") throw new ApiError(403, "forbidden", "Coach không được xem học phí.");
     return json({ invoices: await allRows(query) });
   }
-  requireRole(auth, "founder");
+  assertCanApproveOperations(auth.role);
   const body = await readJson<JsonObject>(request);
   const enrollmentId = requireText(body.enrollmentId, "enrollmentId", 64);
   const enrollment = await env.DB.prepare(
@@ -2051,7 +2098,7 @@ export async function submitProof(request: Request, env: Env, invoiceId: string)
     env.DB.prepare(
       `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
        SELECT ?, ?, id, 'tuition_proof', 'Có bill học phí mới', 'Học viên đã tải bill học phí lên để Founder kiểm tra.', ?, ?
-       FROM users WHERE tenant_id=? AND role='founder' AND is_active=1`,
+        FROM users WHERE tenant_id=? AND role IN ('founder', 'co_founder', 'manager') AND is_active=1`,
     ).bind(newId(), tenantId, invoiceId, now, tenantId),
   ]);
   await audit(env, tenantId, auth.id, "tuition.proof_submitted", "payment_proof", id, { invoiceId });
@@ -2060,7 +2107,7 @@ export async function submitProof(request: Request, env: Env, invoiceId: string)
 
 export async function reviewProof(request: Request, env: Env, proofId: string): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  assertCanApproveOperations(auth.role);
   const tenantId = requireTenant(auth);
   const body = await readJson<JsonObject>(request);
   const accepted = body.accepted === true;
@@ -2110,7 +2157,7 @@ export async function reviewProof(request: Request, env: Env, proofId: string): 
     newId(), tenantId, proof.trainee_user_id ?? invoice.trainee_user_id,
     accepted ? "tuition_confirmed" : "tuition_rejected",
     accepted ? "Học phí đã được xác nhận" : "Cần tải lại bill học phí",
-    accepted ? "Bill đã được Founder xác nhận. Bạn có thể xuất hóa đơn PDF." : "Bill chưa được chấp nhận. Vui lòng kiểm tra và tải lại.",
+    accepted ? "Bill đã được người duyệt xác nhận. Bạn có thể xuất hóa đơn PDF." : "Bill chưa được chấp nhận. Vui lòng kiểm tra và tải lại.",
     proof.invoice_id, now,
   ));
   await env.DB.batch(statements);
@@ -2153,7 +2200,7 @@ export async function confirmParentPayment(
   invoiceId: string,
 ): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  assertCanApproveOperations(auth.role);
   const tenantId = requireTenant(auth);
   const invoice = await env.DB.prepare(
     `SELECT ti.*, c.team_name, cl.name AS class_name, p.full_name AS trainee_name,
@@ -2230,7 +2277,7 @@ export async function confirmParentPayment(
     env.DB.prepare(
       `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
        VALUES (?, ?, ?, 'tuition_confirmed', 'Học phí đã được xác nhận',
-               'Founder đã xác nhận khoản chuyển khoản từ phụ huynh. Bạn có thể xuất hóa đơn PDF.', ?, ?)`,
+               'Người duyệt đã xác nhận khoản chuyển khoản từ phụ huynh. Bạn có thể xuất hóa đơn PDF.', ?, ?)`,
     ).bind(newId(), tenantId, invoice.trainee_user_id, invoiceId, now),
   ]);
   await audit(env, tenantId, auth.id, "tuition.parent_payment_confirmed", "tuition_invoice", invoiceId, {
@@ -2302,7 +2349,7 @@ export async function paymentProofImage(
     content_type: string | null;
   }>();
   if (!row) throw new ApiError(404, "not_found", "Không tìm thấy bill.");
-  if (auth.role !== "founder" && auth.id !== row.trainee_user_id) {
+  if (!isFounderLike(auth.role) && auth.role !== "manager" && auth.id !== row.trainee_user_id) {
     throw new ApiError(403, "forbidden", "Bạn không được xem bill này.");
   }
 
@@ -2319,7 +2366,9 @@ export async function paymentProofImage(
 
 export async function updateInvoiceCycles(request: Request, env: Env, invoiceId: string): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "trainee", "founder");
+  if (auth.role !== "trainee" && !isFounderLike(auth.role) && auth.role !== "manager") {
+    throw new ApiError(403, "forbidden_invoice_update", "Role hiện tại không được thay đổi số chu kỳ học phí.");
+  }
   const tenantId = requireTenant(auth);
   const ownerClause = auth.role === "trainee" ? " AND ti.trainee_user_id=?" : "";
   const invoice = await env.DB.prepare(
@@ -2348,8 +2397,10 @@ export async function updateInvoiceCycles(request: Request, env: Env, invoiceId:
     ? [cycleCount, amount, planned, now, invoiceId, tenantId, auth.id]
     : [cycleCount, amount, planned, now, invoiceId, tenantId])).run();
   await audit(env, tenantId, auth.id,
-    auth.role === "founder"
+      isFounderLike(auth.role)
       ? "tuition.prepaid_cycles_changed_by_founder"
+      : auth.role === "manager"
+        ? "tuition.prepaid_cycles_changed_by_manager"
       : "tuition.prepaid_cycles_changed",
     "tuition_invoice",
     invoiceId,
@@ -2374,7 +2425,7 @@ function nextSalaryPeriod(period: string): string {
 
 export async function updateSalary(request: Request, env: Env, salaryId: string): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  assertCanApproveOperations(auth.role);
   const tenantId = requireTenant(auth);
   const salary = await env.DB.prepare("SELECT * FROM coach_salaries WHERE id=? AND tenant_id=? LIMIT 1")
     .bind(salaryId, tenantId).first<Record<string, unknown>>();
@@ -2412,7 +2463,7 @@ export async function updateSalary(request: Request, env: Env, salaryId: string)
 
 export async function updateReceiptPdf(request: Request, env: Env, receiptId: string): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  assertCanApproveOperations(auth.role);
   const tenantId = requireTenant(auth);
   const body = await readJson<JsonObject>(request);
   const uploadId = requireText(body.uploadId, "uploadId", 64);
@@ -2427,7 +2478,9 @@ export async function updateReceiptPdf(request: Request, env: Env, receiptId: st
 
 export async function announcement(request: Request, env: Env): Promise<Response> {
   const auth = await authenticate(request, env);
-  requireRole(auth, "founder");
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_announcement", "Chỉ Founder hoặc Co-Founder được gửi thông báo.");
+  }
   const tenantId = requireTenant(auth);
   const body = await readJson<JsonObject>(request);
   const title = requireText(body.title, "title", 180);
@@ -2529,7 +2582,7 @@ export async function uploads(request: Request, env: Env, id?: string): Promise<
     if (!row) throw new ApiError(404, "not_found", "Không tìm thấy file.");
     const purpose = String(row.purpose);
     const isOwner = row.owner_user_id === auth.id;
-    const canReadSensitive = auth.role === "founder" || isOwner;
+    const canReadSensitive = isFounderLike(auth.role) || auth.role === "manager" || isOwner;
     if (["checkin_selfie", "checkout_selfie", "payment_proof"].includes(purpose) && !canReadSensitive) {
       throw new ApiError(403, "forbidden", "Không được xem file này.");
     }
@@ -2549,6 +2602,7 @@ export async function uploads(request: Request, env: Env, id?: string): Promise<
   }
   const rolePurposes: Record<string, string[]> = {
     founder: ["avatar", "club_logo", "receipt"],
+    co_founder: ["avatar", "club_logo", "receipt"],
     coach: ["avatar", "checkin_selfie", "checkout_selfie"],
     trainee: ["avatar", "payment_proof"],
   };

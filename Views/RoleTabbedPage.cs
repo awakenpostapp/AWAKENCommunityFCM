@@ -30,11 +30,19 @@ public sealed class RoleTabbedPage : Microsoft.Maui.Controls.TabbedPage
         switch (role)
         {
             case UserRole.Founder:
+            case UserRole.CoFounder:
                 AddTab<FounderDashboardPage>("Tổng quan", "tab_home.svg", hideRootNavigationBar: true);
                 AddTab<ClassListPage>("Lớp học", "tab_classes.svg", hideRootNavigationBar: true);
                 AddTab<MemberManagementPage>("Thành viên", "tab_people.svg", hideRootNavigationBar: true);
                 AddTab<FounderFinancePage>("Tài chính", "tab_finance.svg", hideRootNavigationBar: true);
                 AddTab<MorePage>("Quản lý", "tab_more.svg", hideRootNavigationBar: true);
+                break;
+            case UserRole.Manager:
+                AddTab<ManagerDashboardPage>("Tổng quan", "tab_home.svg", hideRootNavigationBar: true);
+                AddTab<ClassListPage>("Lớp học", "tab_classes.svg", hideRootNavigationBar: true);
+                AddTab<MemberManagementPage>("Thành viên", "tab_people.svg", hideRootNavigationBar: true);
+                AddTab<ManagerFinancePage>("Tài chính", "tab_finance.svg", hideRootNavigationBar: true);
+                AddTab<ManagerOperationsPage>("Xử lý", "tab_more.svg", hideRootNavigationBar: true);
                 break;
             case UserRole.Coach:
                 AddTab<CoachDashboardPage>("Hôm nay", "tab_home.svg", hideRootNavigationBar: true);

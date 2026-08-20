@@ -1013,7 +1013,7 @@ public sealed partial class AppDatabase
     private async Task<HashSet<string>> GetVisibleMemberIdsAsync(UserAccount actor)
     {
         var result = new HashSet<string> { actor.Id };
-        if (actor.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(actor.Role) || actor.Role == UserRole.Manager)
         {
             var all = await Database.Table<UserAccount>().ToListAsync();
             if (!string.IsNullOrWhiteSpace(actor.TenantId))
@@ -1053,7 +1053,7 @@ public sealed partial class AppDatabase
     private HashSet<string> GetVisibleMemberIdsOnline(UserAccount actor)
     {
         var result = new HashSet<string> { actor.Id };
-        if (actor.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(actor.Role) || actor.Role == UserRole.Manager)
         {
             result.UnionWith(Online.Users
                 .Where(item => item.TenantId == actor.TenantId)
@@ -1087,14 +1087,20 @@ public sealed partial class AppDatabase
         string email,
         string phone,
         bool isTuitionSupported = false,
-        string coachPosition = "")
+        string coachPosition = "",
+        string guardianName = "",
+        string guardianPhone = "")
     {
         coachPosition = role == UserRole.Coach && CoachPositionCatalog.IsValid(coachPosition)
             ? coachPosition.Trim()
             : string.Empty;
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanCreateMember(onlineActor.Role, role))
+            {
+                throw new UnauthorizedAccessException("Tài khoản không có quyền tạo loại account này.");
+            }
             try
             {
                 var response = await _cloudApi.PostAsync<CloudCreateUserRequest, CloudAuthResponse>(
@@ -1103,11 +1109,11 @@ public sealed partial class AppDatabase
                         username.Trim(),
                         fullName.Trim(),
                         email.Trim(),
-                        role.ToString().ToLowerInvariant(),
+                        RoleCapabilities.ToWireRole(role),
                         role == UserRole.Trainee && isTuitionSupported,
                         phone.Trim(),
-                        string.Empty,
-                        string.Empty,
+                        guardianName.Trim(),
+                        guardianPhone.Trim(),
                         coachPosition),
                     idempotencyKey: EntityId.New());
                 var createdSnapshot = response.User
@@ -1128,17 +1134,17 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var actor = await RequireRoleAsync(actorUserId, UserRole.Founder);
-        if (role is not (UserRole.Coach or UserRole.Trainee))
+        var actor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanCreateMember(actor.Role, role))
         {
-            throw new InvalidOperationException("Founder chỉ có thể tạo Coach hoặc Trainee.");
+            throw new UnauthorizedAccessException("Tài khoản không có quyền tạo loại account này.");
         }
 
         if (_cloudOptions.IsConfigured
             && !await HasCloudSessionForAsync(actorUserId))
         {
             throw new InvalidOperationException(
-                "Account Founder phải đăng nhập online trước khi tạo account.");
+                "Account quản lý phải đăng nhập online trước khi tạo account.");
         }
 
         if (IsCloudBackedAccount(actor) || await HasCloudSessionForAsync(actorUserId))
@@ -1151,11 +1157,11 @@ public sealed partial class AppDatabase
                         username.Trim(),
                         fullName.Trim(),
                         email.Trim(),
-                        role.ToString().ToLowerInvariant(),
+                        RoleCapabilities.ToWireRole(role),
                         role == UserRole.Trainee && isTuitionSupported,
                         phone.Trim(),
-                        string.Empty,
-                        string.Empty,
+                        guardianName.Trim(),
+                        guardianPhone.Trim(),
                         coachPosition),
                     idempotencyKey: EntityId.New());
                 return await CacheCloudIdentityAsync(response);
@@ -1203,6 +1209,8 @@ public sealed partial class AppDatabase
             FullName = fullName.Trim(),
             Email = email.Trim(),
             Phone = phone.Trim(),
+            GuardianName = guardianName.Trim(),
+            GuardianPhone = guardianPhone.Trim(),
             CoachPosition = coachPosition,
             UpdatedAtUtc = DateTime.UtcNow
         };
@@ -1760,7 +1768,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền thay đổi trạng thái account.");
             try
             {
                 await _cloudApi.PatchAsync(
@@ -1780,7 +1790,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var actor = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var actor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(actor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền thay đổi trạng thái account.");
         var target = await Database.FindAsync<UserAccount>(targetUserId)
                      ?? throw new InvalidOperationException("Không tìm thấy account.");
         if (target.Role == UserRole.Founder)
@@ -1825,7 +1837,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền đặt lại mật khẩu.");
             try
             {
                 await _cloudApi.PatchAsync(
@@ -1841,7 +1855,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var actor = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var actor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(actor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền đặt lại mật khẩu.");
         var target = await Database.FindAsync<UserAccount>(targetUserId)
                      ?? throw new InvalidOperationException("Không tìm thấy account.");
         if (target.Role == UserRole.Founder)
@@ -2044,7 +2060,8 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var onlineTarget = Online.User(profile.UserId)
                          ?? throw new InvalidOperationException("Không tìm thấy account.");
-            if (onlineActor.Role != UserRole.Founder && onlineActor.Id != onlineTarget.Id)
+            if (onlineActor.Id != onlineTarget.Id
+                && !RoleCapabilities.CanEditMemberProfile(onlineActor.Role, onlineTarget.Role))
             {
                 throw new UnauthorizedAccessException("Bạn không có quyền sửa hồ sơ này.");
             }
@@ -2109,7 +2126,8 @@ public sealed partial class AppDatabase
         var actor = await RequireUserAsync(actorUserId);
         var target = await Database.FindAsync<UserAccount>(profile.UserId)
                      ?? throw new InvalidOperationException("Không tìm thấy account.");
-        if (actor.Role != UserRole.Founder && actor.Id != target.Id)
+        if (actor.Id != target.Id
+            && !RoleCapabilities.CanEditMemberProfile(actor.Role, target.Role))
         {
             throw new UnauthorizedAccessException("Bạn không có quyền sửa hồ sơ này.");
         }
@@ -2196,7 +2214,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền cập nhật trạng thái hỗ trợ học phí.");
             await EnsureOnlineSnapshotAsync();
             var onlineTarget = Online.User(targetUserId)
                          ?? throw new InvalidOperationException("Không tìm thấy account.");
@@ -2220,7 +2240,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var supportActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(supportActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền cập nhật trạng thái hỗ trợ học phí.");
         var target = await Database.FindAsync<UserAccount>(targetUserId)
                      ?? throw new InvalidOperationException("Không tìm thấy account.");
         if (target.Role != UserRole.Trainee)
@@ -2297,7 +2319,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền chỉnh sửa thông tin đội.");
             club.Id = 1;
             club.UpdatedAtUtc = DateTime.UtcNow;
             try
@@ -2338,7 +2362,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var clubActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(clubActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền chỉnh sửa thông tin đội.");
         var hasBankDetails = !string.IsNullOrWhiteSpace(club.BankBin)
                              || !string.IsNullOrWhiteSpace(club.BankAccountNumber);
         if (hasBankDetails)
@@ -2413,7 +2439,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            var actor = await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(actor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền quản lý sân.");
             await EnsureOnlineSnapshotAsync();
             if (string.IsNullOrWhiteSpace(venue.Name))
             {
@@ -2433,7 +2461,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var venueActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(venueActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền quản lý sân.");
         await EnsureCloudWriteReadyAsync(actorUserId);
         if (string.IsNullOrWhiteSpace(venue.Name))
         {
@@ -2462,7 +2492,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            var actor = await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(actor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền quản lý sân.");
             await EnsureOnlineSnapshotAsync();
             var onlineVenue = Online.Venue(venueId)
                         ?? throw new InvalidOperationException("Không tìm thấy sân.");
@@ -2473,7 +2505,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var venueActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(venueActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền quản lý sân.");
         await EnsureCloudWriteReadyAsync(actorUserId);
         var venue = await Database.FindAsync<Venue>(venueId)
                     ?? throw new InvalidOperationException("Không tìm thấy sân.");
@@ -2500,7 +2534,7 @@ public sealed partial class AppDatabase
             }
             var onlineActor = await RequireOnlineUserAsync(actorUserId);
             await EnsureOnlineSnapshotAsync();
-            var onlineClasses = (onlineActor.Role == UserRole.Founder
+            var onlineClasses = (RoleCapabilities.IsFounderLike(onlineActor.Role)
                     ? Online.Classes
                     : Online.Classes.Where(item => item.IsActive))
                 .ToList();
@@ -2549,7 +2583,7 @@ public sealed partial class AppDatabase
         var actor = await RequireUserAsync(actorUserId);
         var classes = await Database.Table<TrainingClass>()
             .ToListAsync();
-        if (actor.Role != UserRole.Founder)
+        if (!RoleCapabilities.IsFounderLike(actor.Role))
         {
             classes = classes.Where(item => item.IsActive).ToList();
         }
@@ -2625,7 +2659,11 @@ public sealed partial class AppDatabase
         var trialSessions = traineeTrialSessions ?? new Dictionary<string, int>();
         if (IsOnline)
         {
-            var actor = await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanCreateClasses(actor.Role))
+            {
+                throw new UnauthorizedAccessException("Tài khoản không có quyền tạo lớp học.");
+            }
             await EnsureOnlineSnapshotAsync();
             if (string.IsNullOrWhiteSpace(trainingClass.Name))
                 throw new InvalidOperationException("Vui lòng nhập tên lớp.");
@@ -2725,7 +2763,11 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var offlineActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanCreateClasses(offlineActor.Role))
+        {
+            throw new UnauthorizedAccessException("Tài khoản không có quyền tạo lớp học.");
+        }
         await EnsureCloudWriteReadyAsync(actorUserId);
         if (string.IsNullOrWhiteSpace(trainingClass.Name))
         {
@@ -2895,7 +2937,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            var actor = await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(actor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền bật/tắt lớp học.");
             await EnsureOnlineSnapshotAsync();
             var onlineTrainingClass = Online.Class(classId)
                                 ?? throw new InvalidOperationException("Không tìm thấy lớp.");
@@ -2906,7 +2950,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var classStatusActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(classStatusActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền bật/tắt lớp học.");
         await EnsureCloudWriteReadyAsync(actorUserId);
         var trainingClass = await Database.FindAsync<TrainingClass>(classId)
                             ?? throw new InvalidOperationException("Không tìm thấy lớp.");
@@ -2921,7 +2967,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(actor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xóa lớp học.");
             await EnsureOnlineSnapshotAsync();
             var onlineClass = Online.Class(classId)
                 ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
@@ -2958,7 +3006,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var deleteActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(deleteActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xóa lớp học.");
         var trainingClass = await Database.FindAsync<TrainingClass>(classId)
             ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
         var classSessionIds = (await Database.Table<TrainingSession>()
@@ -3606,7 +3656,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem điểm danh.");
             await EnsureOnlineSnapshotAsync();
             var sessionIds = Online.TrainingSessions
                 .Where(item => item.ClassId == classId
@@ -3620,7 +3672,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var attendanceActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(attendanceActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem điểm danh.");
         var sessions = await Database.Table<TrainingSession>()
             .Where(item => item.ClassId == classId
                            && (item.Status == SessionStatus.Submitted
@@ -3842,7 +3896,7 @@ public sealed partial class AppDatabase
         {
             var onlineActor = await RequireOnlineUserAsync(actorUserId);
             await EnsureOnlineSnapshotAsync();
-            if (onlineActor.Role is not (UserRole.Founder or UserRole.Coach))
+            if (onlineActor.Role is not (UserRole.Founder or UserRole.CoFounder or UserRole.Coach))
                 throw new UnauthorizedAccessException("Tài khoản này không có quyền điểm danh.");
             var onlineSession = Online.Session(sessionId)
                           ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
@@ -3853,15 +3907,15 @@ public sealed partial class AppDatabase
                 if (open is null || open.CheckedOutAtUtc is not null)
                     throw new InvalidOperationException("Vui lòng chụp selfie check-in trước khi điểm danh.");
             }
-            if (onlineActor.Role == UserRole.Founder && submit && string.IsNullOrWhiteSpace(overrideReason))
+            if (RoleCapabilities.IsFounderLike(onlineActor.Role) && submit && string.IsNullOrWhiteSpace(overrideReason))
                 throw new InvalidOperationException("Founder cần nhập lý do khi điểm danh thay.");
-            var storedOverrideReason = onlineActor.Role == UserRole.Founder && submit
+            var storedOverrideReason = RoleCapabilities.IsFounderLike(onlineActor.Role) && submit
                 ? founderNoAttendance
                     ? FounderNoAttendanceReason(overrideReason)
                     : founderCoachTaughtManually
                         ? FounderManualTaughtReason(overrideReason)
                         : FounderSubstitutionReason(overrideReason)
-                : onlineActor.Role == UserRole.Founder
+                : RoleCapabilities.IsFounderLike(onlineActor.Role)
                     ? overrideReason.Trim()
                     : string.Empty;
             var onlineItems = roster.ToList();
@@ -3913,7 +3967,7 @@ public sealed partial class AppDatabase
                         // The Worker owns the canonical historical marker. Do
                         // not send the already-suffixed local display text or
                         // each reload would append the marker again.
-                        overrideReason = onlineActor.Role == UserRole.Founder && submit
+                        overrideReason = RoleCapabilities.IsFounderLike(onlineActor.Role) && submit
                             ? overrideReason.Trim()
                             : storedOverrideReason,
                         coachTaughtManually = founderCoachTaughtManually,
@@ -3936,11 +3990,11 @@ public sealed partial class AppDatabase
             onlineSession.Status = submit ? SessionStatus.Submitted : SessionStatus.Draft;
             onlineSession.SubmittedByUserId = submit ? actorUserId : onlineSession.SubmittedByUserId;
             onlineSession.SubmittedAtUtc = submit ? DateTime.UtcNow : onlineSession.SubmittedAtUtc;
-            onlineSession.OverrideReason = onlineActor.Role == UserRole.Founder
+            onlineSession.OverrideReason = RoleCapabilities.IsFounderLike(onlineActor.Role)
                 ? storedOverrideReason
                 : onlineSession.OverrideReason;
             onlineSession.UpdatedAtUtc = DateTime.UtcNow;
-            if (submit && onlineActor.Role == UserRole.Founder && !founderCoachTaughtManually)
+            if (submit && RoleCapabilities.IsFounderLike(onlineActor.Role) && !founderCoachTaughtManually)
             {
                 var substitutionAt = DateTime.UtcNow;
                 foreach (var assignment in Online.ClassCoaches
@@ -3972,7 +4026,7 @@ public sealed partial class AppDatabase
                     Online.Upsert(Online.CoachCheckIns, substituted, value => value.Id == substituted.Id);
                 }
             }
-            else if (submit && onlineActor.Role == UserRole.Founder)
+            else if (submit && RoleCapabilities.IsFounderLike(onlineActor.Role))
             {
                 // The Worker derives historical Coach rows/salary in the same
                 // attendance transaction. Reload both modes so a transition
@@ -3984,7 +4038,7 @@ public sealed partial class AppDatabase
 
         await InitializeAsync();
         var actor = await RequireUserAsync(actorUserId);
-        if (actor.Role is not (UserRole.Founder or UserRole.Coach))
+        if (actor.Role is not (UserRole.Founder or UserRole.CoFounder or UserRole.Coach))
         {
             throw new UnauthorizedAccessException("Tài khoản này không có quyền điểm danh.");
         }
@@ -3993,17 +4047,17 @@ public sealed partial class AppDatabase
                       ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
         await EnsureClassAccessAsync(actor, session.ClassId, writeAttendance: true);
         await EnsureCoachSessionIsOpenAsync(actor, session);
-        if (actor.Role == UserRole.Founder && string.IsNullOrWhiteSpace(overrideReason))
+        if (RoleCapabilities.IsFounderLike(actor.Role) && string.IsNullOrWhiteSpace(overrideReason))
         {
             throw new InvalidOperationException("Founder cần nhập lý do khi điểm danh thay.");
         }
-        var storedLocalOverrideReason = actor.Role == UserRole.Founder && submit
+        var storedLocalOverrideReason = RoleCapabilities.IsFounderLike(actor.Role) && submit
             ? founderNoAttendance
                 ? FounderNoAttendanceReason(overrideReason)
                 : founderCoachTaughtManually
                     ? FounderManualTaughtReason(overrideReason)
                     : FounderSubstitutionReason(overrideReason)
-            : actor.Role == UserRole.Founder
+            : RoleCapabilities.IsFounderLike(actor.Role)
                 ? overrideReason.Trim()
                 : session.OverrideReason;
 
@@ -4149,7 +4203,7 @@ public sealed partial class AppDatabase
             }
         }
 
-        if (submit && actor.Role == UserRole.Founder && !founderCoachTaughtManually)
+        if (submit && RoleCapabilities.IsFounderLike(actor.Role) && !founderCoachTaughtManually)
         {
             var assignments = await Database.Table<ClassCoachAssignment>()
                 .Where(item => item.ClassId == session.ClassId && item.IsActive)
@@ -4193,7 +4247,7 @@ public sealed partial class AppDatabase
                 }
             }
         }
-        else if (submit && actor.Role == UserRole.Founder && founderCoachTaughtManually)
+        else if (submit && RoleCapabilities.IsFounderLike(actor.Role) && founderCoachTaughtManually)
         {
             // Historical classes can be entered after the app goes live. A
             // Founder explicitly choosing “Đã dạy (ghi nhận thủ công)” must
@@ -4285,7 +4339,7 @@ public sealed partial class AppDatabase
             await EnsureCoachSalaryForPeriodAsync(coachUserId, session.SessionDate);
         }
 
-        if (submit && actor.Role == UserRole.Founder && !founderCoachTaughtManually)
+        if (submit && RoleCapabilities.IsFounderLike(actor.Role) && !founderCoachTaughtManually)
         {
             // Switching a previously manual historical session to Founder
             // substitution must remove its pending salary contribution. The
@@ -4324,7 +4378,7 @@ public sealed partial class AppDatabase
                     {
                         records = cloudRecords,
                         submit,
-                        overrideReason = actor.Role == UserRole.Founder
+                        overrideReason = RoleCapabilities.IsFounderLike(actor.Role)
                             ? overrideReason.Trim()
                             : string.Empty,
                         coachTaughtManually = founderCoachTaughtManually,
@@ -4352,7 +4406,7 @@ public sealed partial class AppDatabase
             submit ? "SubmitAttendance" : "SaveAttendanceDraft",
             nameof(TrainingSession),
             session.Id,
-            actor.Role == UserRole.Founder ? storedLocalOverrideReason : string.Empty,
+            RoleCapabilities.IsFounderLike(actor.Role) ? storedLocalOverrideReason : string.Empty,
             writeCloud: !_cloudOptions.IsConfigured);
         QueueCloudProjectionRefresh();
     }
@@ -4584,7 +4638,10 @@ public sealed partial class AppDatabase
 
         var coachProfile = await GetProfileAsync(actorUserId);
         var founders = await Database.Table<UserAccount>()
-            .Where(item => item.Role == UserRole.Founder && item.IsActive)
+            .Where(item => item.IsActive
+                           && (item.Role == UserRole.Founder
+                               || item.Role == UserRole.CoFounder
+                               || item.Role == UserRole.Manager))
             .ToListAsync();
         foreach (var founder in founders)
         {
@@ -4701,7 +4758,10 @@ public sealed partial class AppDatabase
         var coachProfile = await GetProfileAsync(actorUserId);
         var trainingClass = await Database.FindAsync<TrainingClass>(session.ClassId);
         var founders = await Database.Table<UserAccount>()
-            .Where(item => item.Role == UserRole.Founder && item.IsActive)
+            .Where(item => item.IsActive
+                           && (item.Role == UserRole.Founder
+                               || item.Role == UserRole.CoFounder
+                               || item.Role == UserRole.Manager))
             .ToListAsync();
         foreach (var founder in founders)
         {
@@ -4794,7 +4854,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineApprovalActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineApprovalActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem điểm danh.");
             await EnsureOnlineSnapshotAsync();
             var onlineSessions = Online.TrainingSessions.ToDictionary(item => item.Id);
             var onlineProfiles = Online.Profiles.ToDictionary(item => item.UserId);
@@ -4827,7 +4889,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var attendanceActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(attendanceActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem điểm danh.");
         var checkIns = await Database.Table<CoachCheckIn>().ToListAsync();
         await AutoCloseStaleCoachCheckInsAsync(checkIns);
         checkIns = checkIns
@@ -4877,8 +4941,8 @@ public sealed partial class AppDatabase
         if (IsOnline)
         {
             var onlineActor = await RequireOnlineUserAsync(actorUserId);
-            if (onlineActor.Role is not (UserRole.Founder or UserRole.Coach))
-                throw new UnauthorizedAccessException("Chỉ Founder hoặc Coach được xem lịch sử dạy học.");
+            if (onlineActor.Role is not (UserRole.Founder or UserRole.CoFounder or UserRole.Manager or UserRole.Coach))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem lịch sử dạy học.");
             await EnsureOnlineSnapshotAsync();
             var onlineHistorySessions = Online.TrainingSessions.ToDictionary(item => item.Id);
             var onlineHistoryProfiles = Online.Profiles.ToDictionary(item => item.UserId);
@@ -4912,9 +4976,9 @@ public sealed partial class AppDatabase
         await InitializeAsync();
         await EnsureMissedCoachCheckInsAsync(DateTime.Today);
         var actor = await RequireUserAsync(actorUserId);
-        if (actor.Role is not (UserRole.Founder or UserRole.Coach))
+        if (actor.Role is not (UserRole.Founder or UserRole.CoFounder or UserRole.Manager or UserRole.Coach))
         {
-            throw new UnauthorizedAccessException("Chỉ Founder hoặc Coach được xem lịch sử dạy học.");
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem lịch sử dạy học.");
         }
 
         var checkIns = await Database.Table<CoachCheckIn>().ToListAsync();
@@ -4971,7 +5035,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền duyệt check-in.");
             await EnsureOnlineSnapshotAsync();
             var onlineCheckIn = Online.CoachCheckIns.FirstOrDefault(item => item.Id == checkInId)
                 ?? throw new InvalidOperationException("Không tìm thấy check-in.");
@@ -5004,7 +5070,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var reviewActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(reviewActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền duyệt check-in.");
         var checkIn = await Database.FindAsync<CoachCheckIn>(checkInId)
                       ?? throw new InvalidOperationException("Không tìm thấy check-in.");
         if (checkIn.ApprovalStatus != CoachCheckInApprovalStatus.Pending)
@@ -5204,7 +5272,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem lịch sử điểm danh.");
             if (status == AttendanceStatus.Unmarked)
                 throw new InvalidOperationException("Không có lịch sử cho trạng thái chưa ghi nhận.");
             await EnsureOnlineSnapshotAsync();
@@ -5246,7 +5316,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var attendanceActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(attendanceActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem lịch sử điểm danh.");
         if (status == AttendanceStatus.Unmarked)
         {
             throw new InvalidOperationException(
@@ -5294,7 +5366,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem thống kê điểm danh.");
             await EnsureOnlineSnapshotAsync();
             var onlineMember = Online.User(memberUserId)
                 ?? throw new InvalidOperationException("Không tìm thấy thành viên.");
@@ -5341,7 +5415,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var attendanceActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(attendanceActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem thống kê điểm danh.");
         var member = await Database.FindAsync<UserAccount>(memberUserId)
                      ?? throw new InvalidOperationException("Không tìm thấy thành viên.");
         if (member.Role is not (UserRole.Coach or UserRole.Trainee))
@@ -5432,7 +5508,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem điểm danh lớp.");
             await EnsureOnlineSnapshotAsync();
             var trainee = Online.User(traineeUserId)
                 ?? throw new InvalidOperationException("Không tìm thấy học viên.");
@@ -5471,7 +5549,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var attendanceActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(attendanceActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem điểm danh lớp.");
         var traineeAccount = await Database.FindAsync<UserAccount>(traineeUserId)
                              ?? throw new InvalidOperationException("Không tìm thấy học viên.");
         if (traineeAccount.Role != UserRole.Trainee)
@@ -5845,7 +5925,10 @@ public sealed partial class AppDatabase
             if (localDate.Day > 10 && salary.Status == SalaryStatus.Pending)
             {
                 var founders = await Database.Table<UserAccount>()
-                    .Where(item => item.Role == UserRole.Founder && item.IsActive)
+                    .Where(item => item.IsActive
+                                   && (item.Role == UserRole.Founder
+                                       || item.Role == UserRole.CoFounder
+                                       || item.Role == UserRole.Manager))
                     .ToListAsync();
                 foreach (var founder in founders)
                 {
@@ -6342,7 +6425,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem ảnh check-in.");
             foreach (var checkIn in checkIns)
             {
                 if (!File.Exists(checkIn.SelfiePath) && !string.IsNullOrWhiteSpace(checkIn.SelfiePath))
@@ -6408,7 +6493,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var imageActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(imageActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem ảnh check-in.");
         if (!_cloudOptions.IsConfigured || !await HasCloudSessionForAsync(actorUserId))
         {
             return;
@@ -6617,7 +6704,9 @@ public sealed partial class AppDatabase
 
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền chuẩn bị học phí thay phụ huynh.");
             await EnsureOnlineSnapshotAsync();
             var invoice = Online.Invoices.FirstOrDefault(item => item.Id == invoiceId)
                           ?? throw new InvalidOperationException("Không tìm thấy học phí.");
@@ -6676,7 +6765,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var cycleActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(cycleActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền chuẩn bị học phí thay phụ huynh.");
         var localInvoice = await Database.FindAsync<TuitionInvoice>(invoiceId)
                            ?? throw new InvalidOperationException("Không tìm thấy học phí.");
         var localTrainee = await Database.FindAsync<UserAccount>(localInvoice.TraineeUserId);
@@ -6850,7 +6941,10 @@ public sealed partial class AppDatabase
 
         var profile = await GetProfileAsync(actor.Id);
         var founders = await Database.Table<UserAccount>()
-            .Where(item => item.Role == UserRole.Founder && item.IsActive)
+            .Where(item => item.IsActive
+                           && (item.Role == UserRole.Founder
+                               || item.Role == UserRole.CoFounder
+                               || item.Role == UserRole.Manager))
             .ToListAsync();
         foreach (var founder in founders)
         {
@@ -6872,7 +6966,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền duyệt bill học phí.");
             await EnsureOnlineSnapshotAsync();
             var onlineInvoice = Online.Invoices.FirstOrDefault(item => item.Id == invoiceId)
                 ?? throw new InvalidOperationException("Không tìm thấy học phí.");
@@ -6903,7 +6999,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var founder = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var founder = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(founder.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền duyệt bill học phí.");
         var invoice = await Database.FindAsync<TuitionInvoice>(invoiceId)
                       ?? throw new InvalidOperationException("Không tìm thấy học phí.");
         var trainee = await Database.FindAsync<UserAccount>(invoice.TraineeUserId);
@@ -7004,7 +7102,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền đóng học phí thay phụ huynh.");
             await EnsureOnlineSnapshotAsync();
             var onlineInvoice = Online.Invoices.FirstOrDefault(item => item.Id == invoiceId)
                 ?? throw new InvalidOperationException("Không tìm thấy học phí.");
@@ -7037,7 +7137,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var founder = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var founder = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(founder.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền đóng học phí thay phụ huynh.");
         var invoice = await Database.FindAsync<TuitionInvoice>(invoiceId)
                       ?? throw new InvalidOperationException("Không tìm thấy học phí.");
         var trainee = await Database.FindAsync<UserAccount>(invoice.TraineeUserId);
@@ -7125,7 +7227,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền từ chối bill học phí.");
             await EnsureOnlineSnapshotAsync();
             var onlineInvoice = Online.Invoices.FirstOrDefault(item => item.Id == invoiceId)
                 ?? throw new InvalidOperationException("Không tìm thấy học phí.");
@@ -7156,7 +7260,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var founder = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var founder = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(founder.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền từ chối bill học phí.");
         var invoice = await Database.FindAsync<TuitionInvoice>(invoiceId)
                       ?? throw new InvalidOperationException("Không tìm thấy học phí.");
         var trainee = await Database.FindAsync<UserAccount>(invoice.TraineeUserId);
@@ -7357,7 +7463,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.CanApproveOperations(onlineActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền duyệt lương.");
             await EnsureOnlineSnapshotAsync();
             var onlineSalary = Online.CoachSalaries.FirstOrDefault(item => item.Id == salaryId)
                 ?? throw new InvalidOperationException("Không tìm thấy kỳ lương.");
@@ -7390,7 +7498,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var salaryActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.CanApproveOperations(salaryActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền duyệt lương.");
         var salary = await Database.FindAsync<CoachSalary>(salaryId)
                      ?? throw new InvalidOperationException("Không tìm thấy kỳ lương.");
 
@@ -7790,7 +7900,9 @@ public sealed partial class AppDatabase
 
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var announcementActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(announcementActor.Role))
+                throw new UnauthorizedAccessException("Chỉ Sáng lập hoặc Đồng Sáng lập được gửi thông báo.");
             if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(message))
                 throw new InvalidOperationException("Vui lòng nhập tiêu đề và nội dung.");
             try
@@ -7815,7 +7927,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var announcementLocalActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(announcementLocalActor.Role))
+            throw new UnauthorizedAccessException("Chỉ Sáng lập hoặc Đồng Sáng lập được gửi thông báo.");
         if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(message))
         {
             throw new InvalidOperationException("Vui lòng nhập tiêu đề và nội dung.");
@@ -7878,7 +7992,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var dashboardActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(dashboardActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem tổng quan Founder.");
             await EnsureOnlineSnapshotAsync();
             var supported = Online.Users.Where(item => item.IsTuitionSupported).Select(item => item.Id).ToHashSet();
             var onlineInvoices = Online.Invoices;
@@ -7894,7 +8010,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var dashboardLocalActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(dashboardLocalActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem tổng quan Founder.");
         var classes = await Database.Table<TrainingClass>()
             .Where(item => item.IsActive)
             .CountAsync();
@@ -7935,7 +8053,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var auditActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(auditActor.Role))
+                throw new UnauthorizedAccessException("Tài khoản không có quyền xem lịch sử thao tác.");
             await EnsureOnlineSnapshotAsync();
             return Online.AuditLogs
                 .OrderByDescending(item => item.CreatedAtUtc)
@@ -7944,7 +8064,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var auditLocalActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(auditLocalActor.Role))
+            throw new UnauthorizedAccessException("Tài khoản không có quyền xem lịch sử thao tác.");
         var logs = await Database.Table<AuditLog>().ToListAsync();
         return logs.OrderByDescending(item => item.CreatedAtUtc).Take(limit).ToList();
     }
@@ -7960,7 +8082,7 @@ public sealed partial class AppDatabase
             throw new InvalidOperationException("Không tìm thấy lớp.");
         }
 
-        if (actor.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(actor.Role))
         {
             return;
         }
@@ -7998,7 +8120,7 @@ public sealed partial class AppDatabase
     {
         if (Online.Class(classId) is null)
             throw new InvalidOperationException("Không tìm thấy lớp.");
-        if (actor.Role == UserRole.Founder) return;
+        if (RoleCapabilities.IsFounderLike(actor.Role)) return;
         if (actor.Role == UserRole.Coach
             && Online.ClassCoaches.Any(item => item.ClassId == classId
                                                && item.CoachUserId == actor.Id
@@ -8196,7 +8318,7 @@ public sealed partial class AppDatabase
         await EnsureCloudWriteReadyAsync(actorUserId);
 
         var actor = await RequireUserAsync(actorUserId);
-        if (actor.Role != UserRole.Founder)
+        if (!RoleCapabilities.CanCreateClasses(actor.Role))
         {
             return;
         }

@@ -40,13 +40,13 @@ public sealed class ClassListPage : AsyncContentPage
         };
         if (activeClasses.Count == 0 && inactiveClasses.Count == 0)
         {
-            var action = role == UserRole.Founder
+            var action = RoleCapabilities.CanCreateClasses(role)
                 ? UiKit.PrimaryButton("Tạo lớp đầu tiên", async (_, _) =>
                     await PushPageAsync(new ClassEditorPage(_database, Session)))
                 : null;
             root.Children.Add(UiKit.EmptyState(
                 "Chưa có lớp học",
-                role == UserRole.Founder
+                RoleCapabilities.CanCreateClasses(role)
                     ? "Tạo lớp để thêm lịch, Coach và học viên."
                     : "Founder chưa phân công lớp cho account này.",
                 action));
@@ -63,12 +63,12 @@ public sealed class ClassListPage : AsyncContentPage
             }
 
             IReadOnlyList<CoachCheckInHistoryRow> coachHistory = [];
-            if (role is UserRole.Founder or UserRole.Coach)
+            if (RoleCapabilities.IsFounderLike(role) || role is UserRole.Coach or UserRole.Manager)
             {
                 coachHistory = await _database.GetCoachCheckInHistoryAsync(CurrentUserId);
             }
 
-            var visibleClasses = role == UserRole.Founder ? activeClasses : activeClasses;
+            var visibleClasses = activeClasses;
             root.Children.Add(WeeklyScheduleView.Build(
                 visibleClasses,
                 role,
@@ -80,10 +80,10 @@ public sealed class ClassListPage : AsyncContentPage
                     _media,
                     _rememberedLogin,
                     row)),
-                role == UserRole.Founder
+                RoleCapabilities.CanCreateClasses(role)
                     ? async () => await PushPageAsync(new ClassEditorPage(_database, Session))
                     : null,
-                role == UserRole.Founder
+                RoleCapabilities.IsFounderLike(role)
                     ? async (row, date) =>
                     {
                         // A future calendar cell is a class preview, not an
@@ -113,7 +113,7 @@ public sealed class ClassListPage : AsyncContentPage
                             historicalMode: IsHistoricalBackfill(row, date)));
                     }
                     : null));
-            if (role == UserRole.Founder)
+            if (RoleCapabilities.IsFounderLike(role))
             {
                 if (activeClasses.Count > 0)
                 {
@@ -725,7 +725,7 @@ public sealed class ClassDetailsPage : ContentPage
                 UiKit.Body($"Địa chỉ: {row.Venue?.Address ?? "Chưa cập nhật"}", UiKit.TextSecondary)
             }
         };
-        if (session.CurrentUser?.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(session.CurrentUser?.Role))
         {
             details.Children.Add(UiKit.StatusBadge(
                 row.Class.IsActive ? "Đang hoạt động" : "Ngừng hoạt động",
@@ -742,7 +742,7 @@ public sealed class ClassDetailsPage : ContentPage
 
         Button? evaluationRequestButton = null;
         var evaluationRequestOpen = false;
-        if (session.CurrentUser?.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(session.CurrentUser?.Role))
         {
             evaluationRequestButton = UiKit.SecondaryButton("Mở yêu cầu Coach đánh giá lớp");
             evaluationRequestButton.Clicked += async (_, _) =>
@@ -882,7 +882,7 @@ public sealed class ClassDetailsPage : ContentPage
         // cycle details live alongside the roster shown on this page.
         IReadOnlyList<InvoiceRow> invoices = [];
         IReadOnlyList<ClassEnrollment> enrollments = [];
-        if (role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(role))
         {
             invoices = await _database.GetInvoicesAsync(
                 _session.CurrentUser?.Id
@@ -908,7 +908,7 @@ public sealed class ClassDetailsPage : ContentPage
 
         foreach (var trainee in _row.Trainees)
         {
-            var canOpenEvaluations = role == UserRole.Founder
+            var canOpenEvaluations = RoleCapabilities.IsFounderLike(role)
                                       || role == UserRole.Coach
                                       || (role == UserRole.Trainee
                                           && trainee.Account.Id == _session.CurrentUser?.Id);
@@ -938,17 +938,17 @@ public sealed class ClassDetailsPage : ContentPage
                 _session,
                 media,
                 rememberedLogin,
-                role == UserRole.Founder ? evaluationButton : null);
+                RoleCapabilities.IsFounderLike(role) ? evaluationButton : null);
             var memberAndEvaluation = new VerticalStackLayout
             {
                 Spacing = 6,
                 Children = { memberCard }
             };
-            if (canOpenEvaluations && role != UserRole.Founder && evaluationButton is not null)
+            if (canOpenEvaluations && !RoleCapabilities.IsFounderLike(role) && evaluationButton is not null)
             {
                 memberAndEvaluation.Children.Add(evaluationButton);
             }
-            if (role != UserRole.Founder)
+            if (!RoleCapabilities.IsFounderLike(role))
             {
                 _traineeHost.Children.Add(memberAndEvaluation);
                 continue;
