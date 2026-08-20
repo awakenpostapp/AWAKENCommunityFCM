@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "founder" | "coach" | "trainee";
+export type UserRole = "admin" | "founder" | "co_founder" | "manager" | "coach" | "trainee";
 
 export const COACH_POSITION_KEYS = [
   "head_coach_manager",

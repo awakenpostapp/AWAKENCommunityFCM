@@ -5,6 +5,7 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "WebWorker"],
     "strict": true,
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -12,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "worker-configuration.d.ts"]
 }
