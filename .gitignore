@@ -39,3 +39,4 @@ backups/
 test-evidence/
 docs/screenshots/
 docs/QA_TEST_ACCOUNTS.*
+.worktrees/
