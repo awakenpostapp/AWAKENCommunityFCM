@@ -16,6 +16,8 @@ Release 3.3 - build 115 - 2026-08-20
   Co-Founder van dung day du man hinh Founder.
 - Bo sung test role/schema/route authorization; Worker typecheck/build va
   Android compile deu dat.
+- Migration D1 compatibility duoc danh dau an toan, khong rebuild bang users
+  dang co khoa ngoai; Supabase la source of truth cho role moi.
 - Giu nguyen ApplicationId, database, Cloudflare, Supabase, R2, OAuth va du
   lieu nghiep vu hien co. Chi tang so build tu 114 len 115.
 

@@ -17,6 +17,8 @@
   Co-Founder tiếp tục dùng đầy đủ màn hình Founder.
 - Bổ sung test role/schema/route authorization; Worker typecheck/build và
   Android compile đều đạt.
+- Migration D1 compatibility được đánh dấu an toàn, không rebuild bảng `users`
+  đang có khóa ngoại; Supabase là source of truth cho role mới.
 - Giữ nguyên ApplicationId, database, Cloudflare, Supabase, R2, OAuth và dữ
   liệu nghiệp vụ hiện có. Chỉ tăng số build từ 114 lên 115.
 
