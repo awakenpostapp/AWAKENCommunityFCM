@@ -5,5 +5,6 @@
 -- this numbered migration as a safe, data-preserving marker instead of a
 -- destructive users-table rebuild. The role vocabulary remains documented so
 -- schema checks cannot silently drop admin, founder, co_founder, manager,
--- coach, or trainee.
+-- coach, or trainee ('admin', 'founder', 'co_founder', 'manager', 'coach',
+-- 'trainee').
 SELECT 1 AS management_roles_migration_noop;
