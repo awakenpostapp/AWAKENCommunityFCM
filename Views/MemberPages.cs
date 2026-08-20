@@ -28,7 +28,7 @@ public sealed class MemberManagementPage : AsyncContentPage
     {
         var actorRole = Session.CurrentUser?.Role;
         var visibleRoles = RoleCapabilities.IsFounderLike(actorRole)
-            ? new[] { UserRole.Coach, UserRole.Trainee, UserRole.CoFounder, UserRole.Manager }
+            ? new[] { UserRole.CoFounder, UserRole.Manager, UserRole.Coach, UserRole.Trainee }
             : new[] { UserRole.Coach, UserRole.Trainee };
         var members = (await _database.GetMembersAsync(CurrentUserId, includeInactive: true))
             .Where(item => visibleRoles.Contains(item.Account.Role))

@@ -1,5 +1,13 @@
 # Change log
 
+UI patch - 2026-08-20
+
+- Sap xep nhom thanh vien Founder theo thu tu Dong Sang Lap, Quan Ly,
+  Huan Luyen Vien, Cau Thu Hoc Vien.
+- Bo cac ky tu tien to trung voi icon tu dong cua nut tren trang Tong Quan:
+  Them account, Tao lop hoc, Gui thong bao, Diem danh thay va Lop mo yeu cau
+  danh gia.
+
 Release 3.3 - build 115 - 2026-08-20
 
 - Them vai tro Dong Sang Lap (Co-Founder): giao dien va quyen Founder, nhung

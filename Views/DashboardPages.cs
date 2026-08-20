@@ -167,17 +167,17 @@ public sealed class FounderDashboardPage : AsyncContentPage
                 new RowDefinition(GridLength.Auto)
             }
         };
-        AddAction(actions, "＋ Thêm account", 0, 0, async () =>
+        AddAction(actions, "Thêm account", 0, 0, async () =>
             await PushPageAsync(new MemberEditorPage(_database, Session, _media)));
-        AddAction(actions, "＋ Tạo lớp học", 1, 0, async () =>
+        AddAction(actions, "Tạo lớp học", 1, 0, async () =>
             await PushPageAsync(new ClassEditorPage(_database, Session)));
-        AddAction(actions, "✉ Gửi thông báo", 0, 1, async () =>
+        AddAction(actions, "Gửi thông báo", 0, 1, async () =>
             await PushPageAsync(new AnnouncementComposerPage(_database, Session)));
-        AddAction(actions, "✓ Điểm danh thay", 1, 1, async () =>
+        AddAction(actions, "Điểm danh thay", 1, 1, async () =>
             await PushPageAsync(new AttendanceHubPage(_database, Session)));
         root.Children.Add(actions);
 
-        var evaluationRequests = UiKit.SecondaryButton("▣ Lớp mở yêu cầu đánh giá");
+        var evaluationRequests = UiKit.SecondaryButton("Lớp mở yêu cầu đánh giá");
         evaluationRequests.Clicked += async (_, _) =>
             await PushPageAsync(new FounderEvaluationRequestPage(
                 _database,

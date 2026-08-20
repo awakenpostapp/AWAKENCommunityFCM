@@ -1,5 +1,13 @@
 # Change log
 
+## UI patch — 2026-08-20
+
+- Sắp xếp nhóm thành viên Founder theo thứ tự Đồng Sáng Lập, Quản Lý,
+  Huấn Luyện Viên, Cầu Thủ Học Viên.
+- Bỏ các ký tự tiền tố trùng với icon tự động của nút trên trang Tổng Quan:
+  Thêm account, Tạo lớp học, Gửi thông báo, Điểm danh thay và Lớp mở yêu cầu
+  đánh giá.
+
 ## Release 3.3 — build 115 — 2026-08-20
 
 - Thêm vai trò **Đồng Sáng Lập (Co-Founder)**. Co-Founder dùng giao diện và
