@@ -1,5 +1,25 @@
 # Change log
 
+## Release 3.3 — build 115 — 2026-08-20
+
+- Thêm vai trò **Đồng Sáng Lập (Co-Founder)**. Co-Founder dùng giao diện và
+  quyền Founder, nhưng không được xóa account Co-Founder khác.
+- Thêm vai trò **Quản Lý (Manager)** với phạm vi giới hạn: tạo Coach/Trainee,
+  tạo lớp mới, duyệt check-in/check-out Coach, duyệt bill học phí, đóng học phí
+  thay phụ huynh và duyệt lương Coach. Manager không sửa hồ sơ, thông tin đội,
+  trạng thái account, lịch sử/audit hoặc xóa dữ liệu.
+- Cập nhật bảng quyền ở Android, Worker authorization, snapshot sync và D1;
+  Manager chỉ được đồng bộ lớp mới, không được sửa lớp đã tồn tại.
+- Thêm migration Supabase cho role mới và helper RLS; snapshot Manager được
+  thu gọn theo nguyên tắc least-privilege, không trả Founder/Co-Founder hoặc
+  audit history vào cache vận hành.
+- Bổ sung màn hình Tổng quan/Tài chính/Xử lý riêng cho Manager; Founder và
+  Co-Founder tiếp tục dùng đầy đủ màn hình Founder.
+- Bổ sung test role/schema/route authorization; Worker typecheck/build và
+  Android compile đều đạt.
+- Giữ nguyên ApplicationId, database, Cloudflare, Supabase, R2, OAuth và dữ
+  liệu nghiệp vụ hiện có. Chỉ tăng số build từ 114 lên 115.
+
 ## Release 3.3 — build 114 — 2026-08-20
 
 - Thay logo splash/loading bằng `AWAKEN-COMMUNITY-FCM-VERTICAL-LOGO` do người

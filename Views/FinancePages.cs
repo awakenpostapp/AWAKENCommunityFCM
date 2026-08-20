@@ -285,7 +285,7 @@ public sealed class FounderTuitionManagementPage : AsyncContentPage
             {
                 UiKit.Caption("TỔNG TIỀN ĐÃ ĐÓNG"),
                 UiKit.Title(UiKit.Money(totalPaid)),
-                UiKit.Caption("Tính trên tất cả các bill đã được Founder xác nhận.")
+                UiKit.Caption("Tính trên tất cả các bill đã được người duyệt xác nhận.")
             }
         }));
 
@@ -939,7 +939,7 @@ public sealed class FounderCoachSalaryDetailPage : AsyncContentPage
                 UiKit.Caption($"Lớp học: {row.ClassName}"),
                 UiKit.Caption($"Hạn thanh toán {row.Salary.DueDate:dd/MM/yyyy}"),
                 UiKit.Title(UiKit.Money(row.Salary.AmountVnd)),
-                UiKit.Caption("Tính từ các check-in đã được Founder xác nhận."),
+                UiKit.Caption("Tính từ các check-in đã được người duyệt xác nhận."),
                 UiKit.StatusBadge(
                     DomainText.Salary(row.Salary.Status),
                     isPaid
@@ -1486,14 +1486,14 @@ public sealed class FounderParentTuitionPage : AsyncContentPage
             Children =
             {
                 UiKit.Headline(_traineeName),
-                UiKit.Caption("Founder xác nhận trực tiếp sau khi phụ huynh chuyển khoản. Không cần tải bill."),
+                UiKit.Caption("Người duyệt xác nhận trực tiếp sau khi phụ huynh chuyển khoản. Không cần tải bill."),
                 UiKit.OfflineBanner()
             }
         };
 
-        if (Session.CurrentUser?.Role != UserRole.Founder)
+        if (!RoleCapabilities.CanApproveOperations(Session.CurrentUser?.Role))
         {
-            root.Children.Add(UiKit.EmptyState("Không có quyền", "Chỉ Founder mới có thể xác nhận thay phụ huynh."));
+            root.Children.Add(UiKit.EmptyState("Không có quyền", "Chỉ Founder, Co-Founder hoặc Manager mới có thể xác nhận thay phụ huynh."));
         }
         else if (rows.Count == 0)
         {
@@ -1638,7 +1638,7 @@ public sealed class FounderParentTuitionPage : AsyncContentPage
             {
                 var accepted = await DisplayAlertAsync(
                     "Xác nhận chuyển khoản?",
-                    $"{row.TraineeName} · {UiKit.Money(row.Invoice.AmountVnd)}\nFounder xác nhận đã nhận tiền từ phụ huynh.",
+                    $"{row.TraineeName} · {UiKit.Money(row.Invoice.AmountVnd)}\nNgười duyệt xác nhận đã nhận tiền từ phụ huynh.",
                     "Xác nhận",
                     "Hủy");
                 if (!accepted) return;

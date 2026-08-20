@@ -31,15 +31,16 @@ grant execute on function private.is_founder_like() to authenticated, service_ro
 grant execute on function private.can_approve_operations() to authenticated, service_role;
 
 -- Co-Founder follows the Founder management scope, while Manager can review
--- operational records without gaining Founder-only account/configuration
--- privileges.  The Worker remains the only mutation surface in production;
--- these policies keep direct Supabase access consistent with that boundary.
+-- operational records without gaining Founder-only account/configuration or
+-- audit-history privileges. The Worker remains the only mutation surface in
+-- production; these policies keep direct Supabase access consistent with that
+-- boundary.
 drop policy if exists audit_founder_or_admin on public.audit_logs;
 create policy audit_founder_or_admin on public.audit_logs
   for select to authenticated
   using (
     private.current_app_role() = 'admin'
-    or (private.can_approve_operations() and private.is_current_tenant(tenant_id))
+    or (private.is_founder_like() and private.is_current_tenant(tenant_id))
   );
 
 drop policy if exists uploads_owner_or_founder on public.uploads;

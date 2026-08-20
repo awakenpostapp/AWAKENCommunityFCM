@@ -65,7 +65,7 @@ public sealed partial class AppDatabase
         var evaluations = await Database.Table<TraineeEvaluation>().ToListAsync();
         var allowedClassIds = actorLocal.Role switch
         {
-            UserRole.Founder => null,
+            UserRole.Founder or UserRole.CoFounder => null,
             UserRole.Coach => (await Database.Table<ClassCoachAssignment>()
                     .Where(item => item.CoachUserId == actorLocal.Id && item.IsActive)
                     .ToListAsync())
@@ -150,7 +150,7 @@ public sealed partial class AppDatabase
             if (enrolled == 0)
                 throw new UnauthorizedAccessException("Bạn không thuộc lớp này.");
         }
-        else if (actor.Role != UserRole.Founder)
+        else if (!RoleCapabilities.IsFounderLike(actor.Role))
         {
             throw new UnauthorizedAccessException("Tài khoản không có quyền xem yêu cầu đánh giá.");
         }
@@ -251,7 +251,9 @@ public sealed partial class AppDatabase
 
         if (IsOnline)
         {
-            var actor = await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(actor.Role))
+                throw new UnauthorizedAccessException("Chỉ Sáng lập hoặc Đồng Sáng lập được mở yêu cầu đánh giá.");
             await EnsureOnlineSnapshotAsync();
             var trainingClass = Online.Class(classId)
                                 ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
@@ -273,7 +275,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var localActor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(localActor.Role))
+            throw new UnauthorizedAccessException("Chỉ Sáng lập hoặc Đồng Sáng lập được mở yêu cầu đánh giá.");
         await EnsureCloudWriteReadyAsync(actorUserId);
         var localClass = await Database.FindAsync<TrainingClass>(classId)
                          ?? throw new InvalidOperationException("Không tìm thấy lớp học.");
@@ -411,7 +415,9 @@ public sealed partial class AppDatabase
     {
         if (IsOnline)
         {
-            await RequireOnlineRoleAsync(actorUserId, UserRole.Founder);
+            var actor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(actor.Role))
+                throw new UnauthorizedAccessException("Chỉ Sáng lập hoặc Đồng Sáng lập được xác nhận đánh giá.");
             try
             {
                 var response = await _cloudApi.PatchAsync<object, CloudTraineeEvaluationResponse>(
@@ -433,7 +439,9 @@ public sealed partial class AppDatabase
         }
 
         await InitializeAsync();
-        var founder = await RequireRoleAsync(actorUserId, UserRole.Founder);
+        var founder = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(founder.Role))
+            throw new UnauthorizedAccessException("Chỉ Sáng lập hoặc Đồng Sáng lập được xác nhận đánh giá.");
         var current = await Database.FindAsync<TraineeEvaluation>(evaluationId)
                       ?? throw new InvalidOperationException("Không tìm thấy đánh giá học viên.");
         if (current.Status == TraineeEvaluationStatus.Approved)
@@ -503,7 +511,7 @@ public sealed partial class AppDatabase
         }
 
         var founders = (await Database.Table<UserAccount>().ToListAsync())
-            .Where(item => item.Role == UserRole.Founder && item.IsActive)
+            .Where(item => (item.Role is UserRole.Founder or UserRole.CoFounder) && item.IsActive)
             .ToList();
         foreach (var founder in founders)
         {

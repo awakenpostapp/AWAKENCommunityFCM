@@ -9,6 +9,18 @@ namespace CommunityFootballClubManager.Services;
 /// </summary>
 public static class RoleCapabilities
 {
+    public static string ToWireRole(UserRole role) =>
+        role switch
+        {
+            UserRole.CoFounder => "co_founder",
+            UserRole.Manager => "manager",
+            UserRole.Founder => "founder",
+            UserRole.Coach => "coach",
+            UserRole.Trainee => "trainee",
+            UserRole.Admin => "admin",
+            _ => role.ToString().ToLowerInvariant()
+        };
+
     public static bool IsFounderLike(UserRole? role) =>
         role is UserRole.Founder or UserRole.CoFounder;
 

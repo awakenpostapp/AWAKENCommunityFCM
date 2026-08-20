@@ -191,7 +191,8 @@ export async function assertTenantEntity(
 }
 
 export function roleCanSeeMember(viewer: UserRole, target: UserRole): boolean {
-  if (viewer === "founder") return target !== "admin";
+  if (viewer === "founder" || viewer === "co_founder") return target !== "admin";
+  if (viewer === "manager") return target === "coach" || target === "trainee";
   if (viewer === "coach") return target === "founder" || target === "coach" || target === "trainee";
   return target === "founder" || target === "coach" || target === "trainee";
 }

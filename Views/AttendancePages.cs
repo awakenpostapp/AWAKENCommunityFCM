@@ -36,7 +36,7 @@ public sealed class AttendanceHubPage : AsyncContentPage
             MinimumDate = DateTime.Today.AddYears(-1)
         };
         var open = UiKit.PrimaryButton(
-            Session.CurrentUser?.Role == UserRole.Founder
+            RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
                 ? "Điểm danh thay Coach"
                 : "Mở danh sách điểm danh");
         open.Clicked += async (_, _) =>
@@ -61,7 +61,7 @@ public sealed class AttendanceHubPage : AsyncContentPage
             Children =
             {
                 UiKit.OfflineBanner(),
-                Session.CurrentUser?.Role == UserRole.Founder
+                RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
                     ? UiKit.StatusBadge("Bạn đang ở chế độ điểm danh thay Coach", UiKit.Warning)
                     : UiKit.Caption("Chọn lớp và ngày học để điểm danh hoặc sửa học viên đi trễ."),
                 UiKit.Card(new VerticalStackLayout
@@ -77,7 +77,7 @@ public sealed class AttendanceHubPage : AsyncContentPage
             }
         };
 
-        if (Session.CurrentUser?.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role))
         {
             var pendingCheckIns = await _database.GetPendingCoachCheckInsAsync(CurrentUserId);
             var review = UiKit.PrimaryButton(
@@ -171,7 +171,7 @@ public sealed class AttendancePage : AsyncContentPage
             }
         };
 
-        if (Session.CurrentUser?.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role))
         {
             if (_historicalMode)
             {
@@ -277,9 +277,9 @@ public sealed class AttendancePage : AsyncContentPage
         {
             Placeholder = "Lý do điểm danh thay hoặc sửa dữ liệu",
             MinimumHeightRequest = 72,
-            IsVisible = Session.CurrentUser?.Role == UserRole.Founder
+            IsVisible = RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
         };
-        if (Session.CurrentUser?.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role))
         {
             root.Children.Add(UiKit.LabeledField("LÝ DO (BẮT BUỘC)", overrideReason));
         }
@@ -500,7 +500,7 @@ public sealed class CoachCheckInHistoryPage : AsyncContentPage
         // timeline (including selfies and filters) is opened only after a
         // Coach is selected, so a large team does not create a very long
         // history page.
-        if (Session.CurrentUser?.Role == UserRole.Founder
+        if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
             && string.IsNullOrWhiteSpace(_coachUserId))
         {
             var coaches = await _database.GetMembersAsync(CurrentUserId, UserRole.Coach);
@@ -529,7 +529,7 @@ public sealed class CoachCheckInHistoryPage : AsyncContentPage
         // The Founder directory only needs summary data. Download the private
         // R2 selfies after a Coach is selected so opening the directory stays
         // instant even when the club has a long teaching history.
-        if (Session.CurrentUser?.Role == UserRole.Founder)
+        if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role))
         {
             await _database.EnsureCoachCheckInSelfieImagesAsync(CurrentUserId, rows);
         }
@@ -982,7 +982,7 @@ public sealed class CoachCheckInReviewPage : AsyncContentPage
             {
                 UiKit.OfflineBanner(),
                 UiKit.Body(
-                    "Founder kiểm tra đủ ảnh check-in và check-out rồi mới xác nhận và tính lương.",
+                    "Người duyệt kiểm tra đủ ảnh check-in và check-out rồi mới xác nhận và tính lương.",
                     UiKit.TextSecondary),
                 UiKit.StatusBadge($"{rows.Count} ca đang chờ xác nhận", UiKit.Warning)
             }
@@ -1019,7 +1019,7 @@ public sealed class CoachCheckInReviewPage : AsyncContentPage
                     $"Ngày học {row.SessionDate:dd/MM/yyyy} · Gửi lúc {row.CheckIn.CheckedInAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}"),
                 UiKit.Caption(
                     $"Thời gian dạy: {CoachCheckInTime.FormatDuration(CoachCheckInTime.ElapsedSeconds(row.CheckIn))}"),
-                UiKit.StatusBadge("Chờ Founder xác nhận check-out", UiKit.Warning)
+                UiKit.StatusBadge("Chờ người duyệt xác nhận check-out", UiKit.Warning)
             }
         };
 

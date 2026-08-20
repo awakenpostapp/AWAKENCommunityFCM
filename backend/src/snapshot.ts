@@ -44,6 +44,42 @@ function safeUsers(rows: Row[]): Row[] {
 }
 
 /**
+ * Manager snapshots are operational projections, not a Founder directory.
+ * Keep the current Manager plus Coach/Trainee identities needed to create
+ * classes and review approvals; Co-Founder, Founder and Admin identities are
+ * intentionally excluded from the mobile cache.
+ */
+function managerUsers(rows: Row[], currentUserId: string): Row[] {
+  return rows.filter((row) => {
+    const role = String(row.role ?? "");
+    return row.id === currentUserId || role === "manager" || role === "coach" || role === "trainee";
+  });
+}
+
+/**
+ * Manager does not need guardian/contact details to perform the assigned
+ * operations.  Preserve only roster identity and Coach position, while the
+ * signed-in Manager's own profile remains complete through currentProfile.
+ */
+function managerProfiles(rows: Row[], users: Row[], currentUserId: string): Row[] {
+  const allowed = new Map(users.map((row) => [String(row.id), String(row.role)]));
+  return camelRows(rows)
+    .filter((row) => allowed.has(String(row.userId ?? "")))
+    .map((row) => {
+      const userId = String(row.userId ?? "");
+      const role = allowed.get(userId) ?? "";
+      if (userId === currentUserId) return row;
+      return {
+        userId: row.userId,
+        fullName: row.fullName ?? "",
+        photoObjectKey: row.photoObjectKey ?? "",
+        ...(role === "coach" ? { coachPosition: row.coachPosition ?? "" } : {}),
+        updatedAt: row.updatedAt,
+      };
+    });
+}
+
+/**
  * A member snapshot is not an account directory.  Coaches and trainees only
  * need the public identity required to render a class roster; peer trainee
  * email, password state, and tuition-support flags are intentionally omitted.
@@ -918,13 +954,19 @@ export async function getSnapshot(
     const receipts = rowsAt(12);
     const salaries = rowsAt(13);
     const auditLogs = rowsAt(14);
+    const scopedUsers = auth.role === "manager"
+      ? managerUsers(users, auth.id)
+      : users;
+    const scopedProfiles = auth.role === "manager"
+      ? managerProfiles(profiles, scopedUsers, auth.id)
+      : camelRows(profiles);
     return {
       syncVersion,
       serverTime: nowIso(),
       role: auth.role,
       ...identity,
-      users: safeUsers(users),
-      profiles: camelRows(profiles),
+      users: safeUsers(scopedUsers),
+      profiles: scopedProfiles,
       venues: camelRows(venues),
       classes: camelRows(classes),
       classCoaches: camelRows(classCoaches),
@@ -937,7 +979,9 @@ export async function getSnapshot(
       paymentProofs: camelRows(proofs),
       receipts: camelRows(receipts),
       coachSalaries: camelRows(salaries),
-      auditLogs: camelRows(auditLogs),
+      // Audit history is a Founder/Co-Founder surface. Manager receives the
+      // approval records themselves, but not the wider tenant audit trail.
+      auditLogs: auth.role === "manager" ? [] : camelRows(auditLogs),
       notifications,
     };
   }
@@ -1233,6 +1277,29 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
   const incomingSessionIds = new Set(sessionRows.map((row) => String(row.id)));
   const incomingEnrollmentById = new Map(enrollmentRows.map((row) => [String(row.id), row]));
 
+  if (auth.role === "manager") {
+    const unsupported = [
+      ["users", userRows], ["profiles", profileRows], ["venues", venueRows],
+      ["trainingSessions", sessionRows], ["sessionCoaches", sessionCoachRows],
+      ["attendanceRecords", attendanceRows], ["tuitionInvoices", invoiceRows],
+      ["coachSalaries", salaryRows], ["notifications", notificationRows],
+    ].filter(([, rows]) => (rows as Row[]).length > 0).map(([key]) => key);
+    if (body.activeClub !== undefined || body.club !== undefined) unsupported.push("club");
+    if (unsupported.length > 0) {
+      throw new ApiError(403, "forbidden_manager_sync", "Manager chỉ được tạo lớp mới qua snapshot.", { collections: unsupported });
+    }
+    const existingClasses = await Promise.all(classRows.map((item) => env.DB.prepare(
+      "SELECT id FROM classes WHERE id=? AND tenant_id=? LIMIT 1",
+    ).bind(String(item.id), tenantId).first()));
+    if (existingClasses.some(Boolean)) {
+      throw new ApiError(403, "forbidden_manager_class_edit", "Manager chỉ được tạo lớp mới, không được sửa lớp đã có.");
+    }
+    if (classCoachRows.some((item) => !incomingClassIds.has(String(item.classId)))
+      || enrollmentRows.some((item) => !incomingClassIds.has(String(item.classId)))) {
+      throw new ApiError(403, "forbidden_manager_class_assignment", "Manager chỉ được thêm thành viên khi tạo lớp mới.");
+    }
+  }
+
   await Promise.all([
     ensureIdsAvailable(env, "users", importableUserRows.map((row) => String(row.id)), tenantId),
     ensureIdsAvailable(env, "venues", venueRows.map((row) => String(row.id)), tenantId),
@@ -1275,7 +1342,7 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
     ));
   }
 
-  if (isFounderLike(auth.role)) {
+  if (isFounderLike(auth.role) || auth.role === "manager") {
     const clubInput = body.activeClub ?? body.club;
     if (clubInput !== undefined) {
       if (!clubInput || typeof clubInput !== "object" || Array.isArray(clubInput)) {
@@ -1560,10 +1627,12 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
   }
 
   if (!isFounderLike(auth.role)) {
+    const managerSyncAllowed = new Set(["classes", "classCoaches", "classEnrollments"]);
     const privilegedCollections = [
       "users", "profiles", "venues", "classes", "classCoaches", "classEnrollments", "trainingSessions", "sessionCoaches",
       "tuitionInvoices", "coachSalaries", "notifications",
-    ].filter((key) => list(body, key).length > 0);
+    ].filter((key) => list(body, key).length > 0
+      && !(auth.role === "manager" && managerSyncAllowed.has(key)));
     if (privilegedCollections.length > 0) {
       throw new ApiError(403, "forbidden_sync_collections",
         "Role hiện tại không được đồng bộ các collection này.", { collections: privilegedCollections });

@@ -30,7 +30,7 @@ public sealed class FounderEvaluationRequestPage : AsyncContentPage
 
     protected override async Task LoadAsync()
     {
-        if (Session.CurrentUser?.Role != UserRole.Founder)
+        if (!RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role))
         {
             throw new UnauthorizedAccessException(
                 "Chỉ Sáng lập & Điều hành được mở danh sách yêu cầu đánh giá.");
@@ -289,12 +289,13 @@ public sealed class TraineeEvaluationHistoryPage : AsyncContentPage
             _classId);
         var role = Session.CurrentUser?.Role;
         _evaluationRequestOpen = !string.IsNullOrWhiteSpace(_classId)
-            && role is UserRole.Founder or UserRole.Coach or UserRole.Trainee
+            && (RoleCapabilities.IsFounderLike(role)
+                || role is UserRole.Coach or UserRole.Trainee)
             && await _database.IsTraineeEvaluationRequestOpenAsync(CurrentUserId, _classId!);
         var canCreate = role == UserRole.Coach
                         && !string.IsNullOrWhiteSpace(_classId)
                         && _evaluationRequestOpen;
-        var canReview = role == UserRole.Founder;
+        var canReview = RoleCapabilities.IsFounderLike(role);
 
         var header = new Grid
         {
@@ -313,7 +314,7 @@ public sealed class TraineeEvaluationHistoryPage : AsyncContentPage
         _list.Children.Add(UiKit.Caption(
             "Lịch sử được giữ lại để học viên, Coach và Founder theo dõi tiến bộ. Đánh giá đã được Founder xác nhận sẽ không thể sửa."));
 
-        if (role == UserRole.Founder && !string.IsNullOrWhiteSpace(_classId))
+        if (RoleCapabilities.IsFounderLike(role) && !string.IsNullOrWhiteSpace(_classId))
         {
             var requestButton = UiKit.PrimaryButton(
                 _evaluationRequestOpen
