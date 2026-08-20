@@ -21,7 +21,7 @@ public sealed class BootstrapPage : ContentPage
         _navigator = navigator;
         _session = session;
         _persistentSession = persistentSession;
-        BackgroundColor = UiKit.PrimaryDark;
+        BackgroundColor = Color.FromArgb("#F8FAFC");
         Content = new Grid
         {
             Padding = new Thickness(24),
@@ -37,23 +37,15 @@ public sealed class BootstrapPage : ContentPage
                         new Image
                         {
                             Source = "awaken_community_fcm_logo_ui.png",
-                            HeightRequest = 132,
-                            WidthRequest = 104,
+                            HeightRequest = 198,
+                            WidthRequest = 180,
                             Aspect = Aspect.AspectFit,
                             HorizontalOptions = LayoutOptions.Center
-                        },
-                        new Label
-                        {
-                            Text = "AWAKEN Community FCM",
-                            TextColor = Colors.White,
-                            FontFamily = "OpenSansSemibold",
-                            FontSize = 21,
-                            HorizontalTextAlignment = TextAlignment.Center
                         },
                         new ActivityIndicator
                         {
                             IsRunning = true,
-                            Color = UiKit.TealSoft,
+                            Color = UiKit.Primary,
                             Margin = new Thickness(0, 12, 0, 0)
                         }
                     }
@@ -104,7 +96,7 @@ public sealed class BootstrapPage : ContentPage
                     new Label
                     {
                         Text = "Không thể khởi tạo dữ liệu",
-                        TextColor = Colors.White,
+                        TextColor = UiKit.TextPrimary,
                         FontFamily = "OpenSansSemibold",
                         FontSize = 20,
                         HorizontalTextAlignment = TextAlignment.Center
@@ -112,7 +104,7 @@ public sealed class BootstrapPage : ContentPage
                     new Label
                     {
                         Text = exception.Message,
-                        TextColor = Colors.White,
+                        TextColor = UiKit.TextSecondary,
                         HorizontalTextAlignment = TextAlignment.Center
                     }
                 }

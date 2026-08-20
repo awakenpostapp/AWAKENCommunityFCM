@@ -1,5 +1,16 @@
 # Change log
 
+## Release 3.3 — build 114 — 2026-08-20
+
+- Thay logo splash/loading bằng `AWAKEN-COMMUNITY-FCM-VERTICAL-LOGO` do người
+  dùng cung cấp; bỏ dòng chữ tên ứng dụng riêng trên `BootstrapPage`.
+- Đổi nền splash/loading sang `#F8FAFC`, màu nền lấy từ logo AWAKEN Enterprise
+  Technology.
+- Đổi app icon sang `AWAKEN-ENTERPRISE-TECHNOLOGY-LOGO` và cập nhật Android
+  manifest để dùng đúng icon mới.
+- Giữ nguyên ApplicationId, database, Cloudflare, Supabase, R2, OAuth và toàn
+  bộ dữ liệu nghiệp vụ hiện có.
+
 ## Release 3.2 — build 113 — 2026-08-20
 
 - APK Release mới gồm toàn bộ sửa lỗi lịch cũ/lương idempotent, xử lý lỗi

@@ -134,7 +134,7 @@ public sealed class LoginPage : ContentPage
         var hero = new Border
         {
             MinimumHeightRequest = 224,
-            BackgroundColor = UiKit.PrimaryDark,
+            BackgroundColor = Color.FromArgb("#F8FAFC"),
             StrokeThickness = 0,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle
             {
@@ -161,7 +161,7 @@ public sealed class LoginPage : ContentPage
                         Text = "AWAKEN Community FCM",
                         FontFamily = "OpenSansSemibold",
                         FontSize = 20,
-                        TextColor = Colors.White,
+                        TextColor = UiKit.TextPrimary,
                         HorizontalTextAlignment = TextAlignment.Center,
                         LineBreakMode = LineBreakMode.NoWrap,
                         LineHeight = 1.12
@@ -170,7 +170,7 @@ public sealed class LoginPage : ContentPage
                     {
                         Text = "Quản lý đội bóng cộng đồng",
                         FontSize = 14,
-                        TextColor = UiKit.TealSoft,
+                        TextColor = UiKit.PrimaryDark,
                         HorizontalTextAlignment = TextAlignment.Center
                     }
                 }

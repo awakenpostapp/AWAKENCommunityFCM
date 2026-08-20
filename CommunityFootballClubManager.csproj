@@ -26,10 +26,10 @@
 		<ApplicationId>com.awaken.communityfootballclubmanager</ApplicationId>
 
 		<!-- Versions -->
-		<!-- Release 3.2: keep the package/application ID stable so installed
+		<!-- Release 3.3: keep the package/application ID stable so installed
 		     data, OAuth callbacks and the Cloudflare connection remain intact. -->
-		<ApplicationDisplayVersion>3.2</ApplicationDisplayVersion>
-		<ApplicationVersion>113</ApplicationVersion>
+		<ApplicationDisplayVersion>3.3</ApplicationDisplayVersion>
+		<ApplicationVersion>114</ApplicationVersion>
 
 		<SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
 		<AndroidUseAapt2>true</AndroidUseAapt2>
@@ -50,12 +50,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- App Icon: supplied AWAKEN Community FCM stacked master logo. -->
-		<MauiIcon Include="Resources\AppIcon\awaken_community_fcm_logo.png" Color="#FFFFFF" />
+		<!-- App Icon: supplied AWAKEN Enterprise Technology mark. -->
+		<MauiIcon Include="Resources\AppIcon\awaken_enterprise_technology_logo.png" Color="#F8FAFC" />
 
-		<!-- Splash Screen: keep the full stacked mark visible without changing
-		     the app's package identity or online configuration. -->
-		<MauiSplashScreen Include="Resources\Splash\awaken_community_fcm_splash.png" Color="#FFFFFF" BaseSize="120,158" />
+		<!-- Splash Screen: supplied vertical Community FCM logo on the brand
+		     background, without changing package identity or online configuration. -->
+		<MauiSplashScreen Include="Resources\Splash\awaken_community_fcm_splash.png" Color="#F8FAFC" BaseSize="120,132" />
 
 		<!-- Images -->
 		<MauiImage Include="Resources\Images\*" />

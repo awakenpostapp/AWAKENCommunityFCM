@@ -15,8 +15,8 @@
     </queries>
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/awaken_community_fcm_logo"
-        android:roundIcon="@mipmap/awaken_community_fcm_logo_round"
+        android:icon="@mipmap/awaken_enterprise_technology_logo"
+        android:roundIcon="@mipmap/awaken_enterprise_technology_logo_round"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"></application>
     <uses-feature
