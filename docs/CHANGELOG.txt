@@ -1,5 +1,12 @@
 # Change log
 
+Release 3.2 - build 113 - 2026-08-20
+
+- APK Release mới chứa các sửa lỗi lịch cũ/lương idempotent, Supabase error
+  handling và UI/icon lavender-navy-teal.
+- Giữ nguyên ApplicationId, database, Cloudflare/Supabase/R2 và OAuth.
+- Asset APK có tên phiên bản/build riêng, không ghi đè Release 3.1.
+
 Attendance reliability & UI refresh - 2026-08-20
 
 - Chuẩn hoá ba trạng thái lịch cũ: Founder điểm danh thay Coach không tính
