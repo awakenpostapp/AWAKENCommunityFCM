@@ -1,12 +1,15 @@
 # Change log
 
-## UI patch — 2026-08-20
+## Release 3.3 — build 116 — 2026-08-20
 
 - Sắp xếp nhóm thành viên Founder theo thứ tự Đồng Sáng Lập, Quản Lý,
   Huấn Luyện Viên, Cầu Thủ Học Viên.
 - Bỏ các ký tự tiền tố trùng với icon tự động của nút trên trang Tổng Quan:
   Thêm account, Tạo lớp học, Gửi thông báo, Điểm danh thay và Lớp mở yêu cầu
   đánh giá.
+
+- Chỉ tăng số build từ 115 lên 116; giữ nguyên database, Cloudflare,
+  Supabase, R2, OAuth và dữ liệu nghiệp vụ.
 
 ## Release 3.3 — build 115 — 2026-08-20
 

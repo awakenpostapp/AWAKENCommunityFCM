@@ -1,12 +1,14 @@
 # Change log
 
-UI patch - 2026-08-20
+Release 3.3 - build 116 - 2026-08-20
 
 - Sap xep nhom thanh vien Founder theo thu tu Dong Sang Lap, Quan Ly,
   Huan Luyen Vien, Cau Thu Hoc Vien.
 - Bo cac ky tu tien to trung voi icon tu dong cua nut tren trang Tong Quan:
   Them account, Tao lop hoc, Gui thong bao, Diem danh thay va Lop mo yeu cau
   danh gia.
+- Chi tang so build tu 115 len 116; giu nguyen database, Cloudflare,
+  Supabase, R2, OAuth va du lieu nghiep vu.
 
 Release 3.3 - build 115 - 2026-08-20
 
