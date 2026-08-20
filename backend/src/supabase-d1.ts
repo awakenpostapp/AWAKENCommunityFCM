@@ -7,6 +7,8 @@
  * and executed by the locked-down `public.d1_batch` RPC in one transaction.
  */
 
+import { ApiError } from "./http";
+
 type QueryMode = "all" | "run";
 
 interface QuerySpec {
@@ -191,7 +193,9 @@ export class SupabaseD1Database {
   }
 
   async execute(specs: QuerySpec[]): Promise<SupabaseBatchRow[]> {
-    if (!this.env.SUPABASE_SECRET_KEY) throw new Error("SUPABASE_SECRET_KEY is not configured");
+    if (!this.env.SUPABASE_SECRET_KEY) {
+      throw new ApiError(503, "supabase_not_configured", "Backend online chưa được cấu hình đầy đủ.");
+    }
     const queries = specs.map((spec) => ({
       sql: translateSql(spec.sql, spec.values),
       mode: spec.mode,
@@ -211,12 +215,32 @@ export class SupabaseD1Database {
         signal: controller.signal,
       });
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`Supabase RPC failed (${response.status}): ${body.slice(0, 240)}`);
+        // Do not return Postgres/RPC text to the mobile client.  It may expose
+        // schema details and was previously collapsed into an unhelpful 500.
+        // The request id is added by the Worker boundary for diagnostics.
+        await response.text().catch(() => "");
+        throw new ApiError(
+          502,
+          "supabase_write_failed",
+          "Không thể ghi dữ liệu online. Vui lòng thử lại.",
+          { upstreamStatus: response.status },
+        );
       }
       const payload = await response.json() as unknown;
-      if (!Array.isArray(payload)) throw new Error("Supabase RPC returned an invalid result");
+      if (!Array.isArray(payload)) {
+        throw new ApiError(502, "supabase_invalid_response", "Backend online trả về dữ liệu không hợp lệ.");
+      }
       return payload as SupabaseBatchRow[];
+    } catch (error) {
+      if (error instanceof ApiError || (error && typeof error === "object" && "status" in error)) {
+        throw error;
+      }
+      console.error(JSON.stringify({
+        level: "error",
+        event: "supabase_rpc_unavailable",
+        error: String(error),
+      }));
+      throw new ApiError(503, "supabase_unavailable", "Không thể kết nối cơ sở dữ liệu online. Vui lòng thử lại.");
     } finally {
       clearTimeout(timeout);
     }

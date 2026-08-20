@@ -174,7 +174,7 @@ export default {
         response = await route(request, databaseForRequest(env));
       }
     } catch (error) {
-      response = errorResponse(error);
+      response = errorResponse(error, requestId);
     }
     // Redirect responses have immutable headers in the Workers runtime.
     // Clone the response before adding our request ID so OAuth 302 responses

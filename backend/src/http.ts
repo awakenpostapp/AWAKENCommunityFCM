@@ -117,7 +117,7 @@ export function withCors(request: Request, response: Response, env: Env): Respon
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-export function errorResponse(error: unknown): Response {
+export function errorResponse(error: unknown, traceId?: string): Response {
   // Some Workers runtime boundaries can preserve the error fields but not
   // the prototype identity after an awaited D1 operation. Accept the safe
   // structural shape as well so OAuth/D1 validation errors do not become a
@@ -125,12 +125,25 @@ export function errorResponse(error: unknown): Response {
   if (error instanceof ApiError || isApiErrorLike(error)) {
     const apiError = error as ApiError;
     return json(
-      { error: { code: apiError.code, message: apiError.message, details: apiError.details } },
+      {
+        error: {
+          code: apiError.code,
+          message: apiError.message,
+          details: apiError.details,
+          ...(traceId ? { traceId } : {}),
+        },
+      },
       apiError.status,
     );
   }
   console.error(JSON.stringify({ level: "error", event: "unhandled_exception", error: String(error) }));
-  return json({ error: { code: "internal_error", message: "Máy chủ gặp lỗi. Vui lòng thử lại." } }, 500);
+  return json({
+    error: {
+      code: "internal_error",
+      message: "Máy chủ gặp lỗi. Vui lòng thử lại.",
+      ...(traceId ? { traceId } : {}),
+    },
+  }, 500);
 }
 
 function isApiErrorLike(error: unknown): error is ApiError {

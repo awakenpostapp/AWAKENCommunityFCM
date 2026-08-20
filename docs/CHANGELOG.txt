@@ -1,5 +1,19 @@
 # Change log
 
+Attendance reliability & UI refresh - 2026-08-20
+
+- Chuẩn hoá ba trạng thái lịch cũ: Founder điểm danh thay Coach không tính
+  lương; ghi nhận Coach đã dạy tính đúng một lượt; Coach không dạy và Founder
+  không điểm danh không tạo điểm danh/lương.
+- Tính lại lương pending theo check-in hoàn tất, không cộng trùng khi lưu lại;
+  lý do lịch cũ không còn bị nối hậu tố lặp.
+- Worker trả lỗi Supabase an toàn kèm mã theo dõi request thay vì lỗi 500 chung.
+- Áp dụng UI lavender/navy/teal, card bo góc và bộ icon SVG line cho các thao tác
+  chính, trạng thái rỗng và hero.
+- Deploy Worker bằng keep-vars, giữ nguyên D1/R2/Supabase/secrets; health và
+  smoke test chỉ đọc đều đạt.
+- Typecheck/build Worker và Android compile đều pass.
+
 Supabase/Cloudflare database audit - 2026-08-18
 
 - Xác nhận Worker production dùng Supabase làm source of truth; D1 giữ để

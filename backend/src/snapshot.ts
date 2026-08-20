@@ -149,7 +149,53 @@ export const CHECKIN_LOCK_AFTER_END_MINUTES = 120;
 export const AUTO_ABSENT_REVIEW_NOTE = "AUTO_ABSENT_NO_CHECKIN";
 export const FOUNDER_SUBSTITUTED_COACH_REVIEW_NOTE = "FOUNDER_SUBSTITUTED_COACH";
 export const FOUNDER_NO_ATTENDANCE_REVIEW_NOTE = "FOUNDER_NO_ATTENDANCE";
+const HISTORICAL_SUBSTITUTION_MARKER = "Coach không dạy; Founder điểm danh thay Coach";
+const HISTORICAL_MANUAL_MARKER = "Founder ghi nhận buổi học cũ; Coach đã dạy";
+const HISTORICAL_NO_ATTENDANCE_MARKER = "Coach không dạy (Founder không điểm danh dạy)";
 const VIETNAM_UTC_OFFSET_MINUTES = 7 * 60;
+
+export type HistoricalAttendanceMode =
+  | "founder_substituted"
+  | "coach_taught_manually"
+  | "coach_no_attendance";
+
+/**
+ * Historical attendance is persisted as a human-readable reason because the
+ * original schema predates an explicit mode column.  Keep the reason
+ * idempotent: older clients sometimes sent the already-suffixed value back,
+ * which produced duplicated markers and made the next edit ambiguous.
+ */
+export function canonicalHistoricalOverrideReason(
+  reason: string,
+  mode: HistoricalAttendanceMode,
+): string {
+  let base = reason.trim();
+  const markers = [
+    HISTORICAL_SUBSTITUTION_MARKER,
+    HISTORICAL_MANUAL_MARKER,
+    HISTORICAL_NO_ATTENDANCE_MARKER,
+  ];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const marker of markers) {
+      const suffix = `· ${marker}`;
+      if (base.endsWith(suffix)) {
+        base = base.slice(0, -suffix.length).trim().replace(/[·\s]+$/u, "").trim();
+        changed = true;
+      } else if (base === marker) {
+        base = "";
+        changed = true;
+      }
+    }
+  }
+  const marker = mode === "coach_no_attendance"
+    ? HISTORICAL_NO_ATTENDANCE_MARKER
+    : mode === "coach_taught_manually"
+      ? HISTORICAL_MANUAL_MARKER
+      : HISTORICAL_SUBSTITUTION_MARKER;
+  return `${base || "Bổ sung buổi học cũ theo lịch lớp"} · ${marker}`;
+}
 
 type ScheduledClassRow = {
   id: string;

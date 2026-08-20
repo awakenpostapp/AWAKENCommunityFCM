@@ -3,23 +3,23 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
-    <Color x:Key="Primary">#10A6A6</Color>
-    <Color x:Key="PrimaryDark">#075B61</Color>
-    <Color x:Key="BackgroundLight">#F1F8F7</Color>
-    <Color x:Key="BackgroundDark">#073D43</Color>
+    <Color x:Key="Primary">#159A8A</Color>
+    <Color x:Key="PrimaryDark">#0E746A</Color>
+    <Color x:Key="BackgroundLight">#F5F4FA</Color>
+    <Color x:Key="BackgroundDark">#111025</Color>
     <Color x:Key="SurfaceLight">#FFFFFF</Color>
     <Color x:Key="SurfaceDark">#1C1C1E</Color>
-    <Color x:Key="SurfaceSecondaryLight">#E6F3F1</Color>
-    <Color x:Key="SurfaceSecondaryDark">#10545A</Color>
-    <Color x:Key="TextPrimaryLight">#123A40</Color>
+    <Color x:Key="SurfaceSecondaryLight">#EAF4FF</Color>
+    <Color x:Key="SurfaceSecondaryDark">#252344</Color>
+    <Color x:Key="TextPrimaryLight">#16152B</Color>
     <Color x:Key="TextPrimaryDark">#F5F5F7</Color>
-    <Color x:Key="TextSecondaryLight">#648084</Color>
+    <Color x:Key="TextSecondaryLight">#74738A</Color>
     <Color x:Key="TextSecondaryDark">#B0C4C5</Color>
-    <Color x:Key="DividerLight">#D3E8E5</Color>
+    <Color x:Key="DividerLight">#E7E5F0</Color>
     <Color x:Key="DividerDark">#3A3A3C</Color>
-    <Color x:Key="Success">#128F78</Color>
-    <Color x:Key="Warning">#C77A18</Color>
-    <Color x:Key="Danger">#D95255</Color>
+    <Color x:Key="Success">#159A8A</Color>
+    <Color x:Key="Warning">#D99A2B</Color>
+    <Color x:Key="Danger">#D85A67</Color>
     <Color x:Key="White">#FFFFFF</Color>
     <Color x:Key="Black">#000000</Color>
 </ResourceDictionary>

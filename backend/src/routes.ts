@@ -37,6 +37,7 @@ import {
   MAX_OPEN_CHECKIN_SECONDS,
   applySnapshot,
   autoCloseStaleCheckIns,
+  canonicalHistoricalOverrideReason,
   getSnapshot,
   runTenantMaintenance,
   salaryDueDateForConfirmation,
@@ -1336,11 +1337,14 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
       : "";
     const coachTaughtManually = auth.role === "founder" && body.coachTaughtManually === true;
     const overrideReason = auth.role === "founder"
-      ? founderNoAttendance
-        ? `${rawOverrideReason} · Coach không dạy (Founder không điểm danh dạy)`
-        : coachTaughtManually
-        ? `${rawOverrideReason} · Founder ghi nhận buổi học cũ; Coach đã dạy`
-        : `${rawOverrideReason} · Coach không dạy; Founder điểm danh thay Coach`
+      ? canonicalHistoricalOverrideReason(
+        rawOverrideReason,
+        founderNoAttendance
+          ? "coach_no_attendance"
+          : coachTaughtManually
+            ? "coach_taught_manually"
+            : "founder_substituted",
+      )
       : "";
     if (founderNoAttendance) {
       // This is an explicit historical “not taught” outcome: no trainee
@@ -1511,20 +1515,20 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
               note,
             ));
           }
+          // Create the period row without adding an amount here.  The amount
+          // is derived from all approved, completed check-ins by the
+          // maintenance pass below.  The previous incrementing upsert made a
+          // repeated save double-pay the same historical lesson.
           salaryStatements.push(env.DB.prepare(
             `INSERT INTO coach_salaries
              (id, tenant_id, coach_user_id, period, amount_vnd, due_date, status, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-             ON CONFLICT(coach_user_id, period) DO UPDATE SET
-             amount_vnd=coach_salaries.amount_vnd+excluded.amount_vnd,
-             updated_at=excluded.updated_at
-             WHERE coach_salaries.tenant_id=excluded.tenant_id`,
+             VALUES (?, ?, ?, ?, 0, ?, 'pending', ?)
+             ON CONFLICT(coach_user_id, period) DO NOTHING`,
           ).bind(
             newId(),
             tenantId,
             assignment.coach_user_id,
             period,
-            assignment.salary_per_session_vnd,
             dueDate,
             now,
           ));

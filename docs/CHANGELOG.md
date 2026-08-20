@@ -1,5 +1,26 @@
 # Change log
 
+## Attendance reliability & UI refresh — 2026-08-20
+
+- Chuẩn hoá trạng thái buổi học cũ trên Worker: **Coach không dạy
+  (Founder điểm danh thay)** không tạo lương Coach; **Đã dạy (ghi nhận thủ
+  công)** tạo đúng một lượt lương; **Coach không dạy (Founder không điểm danh
+  dạy)** xoá điểm danh và không tính lương.
+- Tính lương lịch cũ theo dữ liệu check-in đã hoàn tất một cách idempotent;
+  lưu lại nhiều lần không cộng trùng và đổi trạng thái về không dạy sẽ tính
+  lại kỳ lương đang chờ thanh toán.
+- Chuẩn hoá lý do lịch cũ, loại bỏ hậu tố bị lặp từ các bản Android cũ.
+- Lỗi ghi Supabase được phân loại an toàn (502/503) và trả mã theo dõi
+  request; không đưa chi tiết SQL/PostgreSQL ra thiết bị.
+- Refresh UI dùng chung theo bộ tham chiếu: nền lavender, hero navy, card
+  trắng bo góc, teal action và icon SVG nét mảnh cho các thao tác thêm, sửa,
+  xoá, gửi, trợ giúp, đăng nhập, thông báo, đánh giá và trạng thái rỗng.
+- Worker production đã triển khai với `--keep-vars`; giữ nguyên D1, R2,
+  Supabase và toàn bộ secrets/biến production. Health, Supabase health và
+  smoke test chỉ đọc đều đạt.
+- Xác minh `npm run typecheck`, `npm run build` và `dotnet build -t:Compile
+  -f net10.0-android --no-restore` đều thành công.
+
 ## Supabase/Cloudflare database audit — 2026-08-18
 
 - Kiểm tra lại Worker production và xác nhận `DATA_BACKEND=supabase`; D1 vẫn

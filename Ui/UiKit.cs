@@ -9,21 +9,22 @@ public static class UiKit
     public static readonly Thickness PagePadding = new(18, 16, 18, 26);
     public const double SectionSpacing = 14;
 
-    // Sea-green visual language from the supplied reference, tuned for
-    // Apple HIG contrast and touch targets in the native app.
-    public static readonly Color Primary = Color.FromArgb("#10A6A6");
-    public static readonly Color PrimaryDark = Color.FromArgb("#075B61");
-    public static readonly Color TealSoft = Color.FromArgb("#DDF4F1");
-    public static readonly Color Accent = Color.FromArgb("#F06C5B");
-    public static readonly Color Background = Color.FromArgb("#F1F8F7");
+    // Lavender canvas + navy surfaces + teal actions follow the supplied
+    // reference while preserving the existing native MAUI navigation/RBAC.
+    public static readonly Color Primary = Color.FromArgb("#159A8A");
+    public static readonly Color PrimaryDark = Color.FromArgb("#0E746A");
+    public static readonly Color TealSoft = Color.FromArgb("#E0F4F0");
+    public static readonly Color Accent = Color.FromArgb("#EA6A5A");
+    public static readonly Color Background = Color.FromArgb("#F5F4FA");
+    public static readonly Color HeroNavy = Color.FromArgb("#111025");
     public static readonly Color Surface = Colors.White;
-    public static readonly Color SurfaceSecondary = Color.FromArgb("#E6F3F1");
-    public static readonly Color TextPrimary = Color.FromArgb("#123A40");
-    public static readonly Color TextSecondary = Color.FromArgb("#648084");
-    public static readonly Color Divider = Color.FromArgb("#D3E8E5");
-    public static readonly Color Success = Color.FromArgb("#128F78");
-    public static readonly Color Warning = Color.FromArgb("#C77A18");
-    public static readonly Color Danger = Color.FromArgb("#D95255");
+    public static readonly Color SurfaceSecondary = Color.FromArgb("#EAF4FF");
+    public static readonly Color TextPrimary = Color.FromArgb("#16152B");
+    public static readonly Color TextSecondary = Color.FromArgb("#74738A");
+    public static readonly Color Divider = Color.FromArgb("#E7E5F0");
+    public static readonly Color Success = Color.FromArgb("#159A8A");
+    public static readonly Color Warning = Color.FromArgb("#D99A2B");
+    public static readonly Color Danger = Color.FromArgb("#D85A67");
 
     public static Label LargeTitle(string text) => new()
     {
@@ -75,7 +76,7 @@ public static class UiKit
             BackgroundColor = Surface,
             Stroke = Divider,
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 18 },
+            StrokeShape = new RoundRectangle { CornerRadius = 22 },
             Padding = padding ?? new Thickness(15),
             Content = content,
             Shadow = new Shadow
@@ -258,6 +259,36 @@ public static class UiKit
     private static string? IconForAction(string text)
     {
         var value = text.ToLowerInvariant();
+        if (value.Contains("thêm") || value.Contains("tạo") || value.Contains("add"))
+        {
+            return "icon_plus.svg";
+        }
+
+        if (value.Contains("xóa") || value.Contains("xoá") || value.Contains("delete"))
+        {
+            return "icon_trash.svg";
+        }
+
+        if (value.Contains("sửa") || value.Contains("chỉnh") || value.Contains("edit"))
+        {
+            return "icon_edit.svg";
+        }
+
+        if (value.Contains("gửi") || value.Contains("send"))
+        {
+            return "icon_send.svg";
+        }
+
+        if (value.Contains("trợ giúp") || value.Contains("hỗ trợ") || value.Contains("help"))
+        {
+            return "icon_help.svg";
+        }
+
+        if (value.Contains("đánh giá") || value.Contains("trophy") || value.Contains("giải"))
+        {
+            return "icon_trophy.svg";
+        }
+
         if (value.Contains("điểm danh") || value.Contains("check-in") || value.Contains("check-out")
             || value.Contains("vắng") || value.Contains("có mặt") || value.Contains("đi trễ"))
         {
@@ -281,15 +312,17 @@ public static class UiKit
             return "tab_people.svg";
         }
 
-        if (value.Contains("thông báo"))
+        if (value.Contains("thông báo") || value.Contains("notification"))
         {
-            return "tab_notifications.svg";
+            return "icon_bell.svg";
         }
 
         if (value.Contains("hồ sơ") || value.Contains("mật khẩu") || value.Contains("bind")
             || value.Contains("google") || value.Contains("đăng nhập") || value.Contains("đăng xuất"))
         {
-            return "tab_profile.svg";
+            return value.Contains("đăng nhập") || value.Contains("đăng xuất")
+                ? "icon_login.svg"
+                : "tab_profile.svg";
         }
 
         return "tab_more.svg";
@@ -457,11 +490,12 @@ public static class UiKit
             Padding = new Thickness(16, 24),
             Children =
             {
-                new Label
+                new Image
                 {
-                    Text = "⚽",
-                    FontSize = 34,
-                    HorizontalTextAlignment = TextAlignment.Center
+                    Source = "icon_soccer_ball.svg",
+                    HeightRequest = 38,
+                    WidthRequest = 38,
+                    HorizontalOptions = LayoutOptions.Center
                 },
                 Headline(title),
                 Body(message, TextSecondary)
@@ -564,12 +598,13 @@ public static class UiKit
                 HorizontalOptions = LayoutOptions.Fill,
                 VerticalOptions = LayoutOptions.Fill
             }
-            : new Label
+            : new Image
             {
-                Text = "⚽",
-                FontSize = size * 0.5,
-                HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center
+                Source = "icon_soccer_ball.svg",
+                HeightRequest = size * 0.5,
+                WidthRequest = size * 0.5,
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center
             };
         return new Border
         {
@@ -654,14 +689,14 @@ public static class UiKit
         return new Border
         {
             MinimumHeightRequest = 220,
-            BackgroundColor = Primary,
+            BackgroundColor = HeroNavy,
             StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = 26 },
             Padding = new Thickness(18),
             Content = content,
             Shadow = new Shadow
             {
-                Brush = PrimaryDark,
+                Brush = HeroNavy,
                 Opacity = 0.18f,
                 Offset = new Point(0, 7),
                 Radius = 16
