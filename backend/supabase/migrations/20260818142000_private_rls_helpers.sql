@@ -1,28 +1,81 @@
 -- Keep SECURITY DEFINER helpers out of the exposed public schema.
--- The application uses the service-only d1_batch RPC; direct Data API
--- callers must never be able to invoke these authorization helpers.
+-- This migration is safe for clean installs: it does not assume an optional
+-- public.rls_auto_enable() function exists and it creates private helpers
+-- before later role migrations reference them.
 
-CREATE SCHEMA IF NOT EXISTS private;
+begin;
 
-ALTER FUNCTION public.current_app_user_id() SET SCHEMA private;
-ALTER FUNCTION public.current_app_tenant_id() SET SCHEMA private;
-ALTER FUNCTION public.current_app_role() SET SCHEMA private;
-ALTER FUNCTION public.is_current_tenant(text) SET SCHEMA private;
+create schema if not exists private;
 
--- This helper is retained for compatibility with the existing trigger setup,
--- but is not part of the public API surface either.
-ALTER FUNCTION public.rls_auto_enable() SET SCHEMA private;
+create or replace function private.current_app_user_id()
+returns text
+language sql
+stable
+security definer
+set search_path = public, private, pg_temp
+as $$
+  select l.app_user_id
+    from public.auth_user_links l
+   where l.auth_user_id = auth.uid()
+     and l.is_active
+   limit 1
+$$;
 
-REVOKE ALL ON SCHEMA private FROM PUBLIC;
-GRANT USAGE ON SCHEMA private TO authenticated;
+create or replace function private.current_app_tenant_id()
+returns text
+language sql
+stable
+security definer
+set search_path = public, private, pg_temp
+as $$
+  select u.tenant_id
+    from public.users u
+   where u.id = private.current_app_user_id()
+   limit 1
+$$;
 
-REVOKE ALL ON FUNCTION private.current_app_user_id() FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION private.current_app_tenant_id() FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION private.current_app_role() FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION private.is_current_tenant(text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION private.current_app_user_id() TO authenticated;
-GRANT EXECUTE ON FUNCTION private.current_app_tenant_id() TO authenticated;
-GRANT EXECUTE ON FUNCTION private.current_app_role() TO authenticated;
-GRANT EXECUTE ON FUNCTION private.is_current_tenant(text) TO authenticated;
+create or replace function private.current_app_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public, private, pg_temp
+as $$
+  select u.role
+    from public.users u
+   where u.id = private.current_app_user_id()
+   limit 1
+$$;
 
-REVOKE ALL ON FUNCTION private.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+create or replace function private.is_current_tenant(candidate_tenant_id text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, private, pg_temp
+as $$
+  select candidate_tenant_id is not null
+     and candidate_tenant_id = private.current_app_tenant_id()
+$$;
+
+revoke all on schema private from public;
+grant usage on schema private to authenticated, service_role;
+
+revoke all on function private.current_app_user_id() from public, anon;
+revoke all on function private.current_app_tenant_id() from public, anon;
+revoke all on function private.current_app_role() from public, anon;
+revoke all on function private.is_current_tenant(text) from public, anon;
+grant execute on function private.current_app_user_id() to authenticated, service_role;
+grant execute on function private.current_app_tenant_id() to authenticated, service_role;
+grant execute on function private.current_app_role() to authenticated, service_role;
+grant execute on function private.is_current_tenant(text) to authenticated, service_role;
+
+-- Existing public helpers may have been created by the bridge migration. They
+-- remain harmless for compatibility but are no longer callable by clients;
+-- the repair migration replaces all policies with private-helper versions.
+revoke all on function public.current_app_user_id() from public, anon, authenticated;
+revoke all on function public.current_app_tenant_id() from public, anon, authenticated;
+revoke all on function public.current_app_role() from public, anon, authenticated;
+revoke all on function public.is_current_tenant(text) from public, anon, authenticated;
+
+commit;

@@ -35,7 +35,13 @@ public sealed partial class AppDatabase
         _onlineState = onlineState;
     }
 
-    private bool IsOnline => _cloudOptions.IsConfigured;
+    /// <summary>
+    /// Indicates that the current app instance is configured for the online
+    /// Worker/Supabase backend.  The login UI uses this only to avoid exposing
+    /// the legacy local-only password reset form when no secure online reset
+    /// endpoint is configured.
+    /// </summary>
+    public bool IsOnline => _cloudOptions.IsConfigured;
 
     private OnlineDataState Online => IsOnline
         ? _onlineState
@@ -103,8 +109,28 @@ public sealed partial class AppDatabase
         await _onlineSnapshotLock.WaitAsync();
         try
         {
-            var wireSnapshot = await _cloudApi.GetSnapshotAsync();
-            Online.Replace(CloudSnapshotMapper.Import(wireSnapshot));
+            // Send the last server cursor whenever possible.  The Worker can
+            // answer a notification/tab refresh with a tiny `unchanged`
+            // response instead of serialising the entire tenant snapshot.
+            // This keeps online navigation fast while still forcing a full
+            // read after login or when no cursor exists yet.
+            var wireSnapshot = await _cloudApi.GetSnapshotAsync(
+                Online.SyncVersion > 0 ? Online.SyncVersion : null);
+            if (wireSnapshot.Unchanged)
+            {
+                Online.MarkFresh(wireSnapshot.SyncVersion);
+                return;
+            }
+
+            var imported = CloudSnapshotMapper.Import(wireSnapshot);
+            if (string.IsNullOrWhiteSpace(imported.TenantId)
+                || (!string.IsNullOrWhiteSpace(Online.TenantId)
+                    && !string.Equals(imported.TenantId, Online.TenantId, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("Snapshot không thuộc đúng đội bóng đang đăng nhập.");
+            }
+
+            Online.Replace(imported);
         }
         finally
         {
@@ -152,7 +178,7 @@ public sealed partial class AppDatabase
 
     public async Task InitializeAsync()
     {
-        // Online builds use D1 as the sole source of truth. Do not create,
+        // Online builds use the Worker/Supabase backend as the sole source of truth. Do not create,
         // migrate, seed or hydrate the legacy SQLite cache in that mode.
         if (IsOnline)
         {
@@ -443,14 +469,10 @@ public sealed partial class AppDatabase
                 var cloudUser = response.User
                                  ?? throw new InvalidOperationException(
                                      "Máy chủ không trả về thông tin tài khoản.");
-                SetOnlineIdentity(
-                    cloudUser,
-                    response.Profile,
-                    response.ActiveClub ?? response.Club);
+                Online.Clear();
                 // Do not block login on a full tenant projection. The first
                 // screen loads it lazily from D1, while the identity/session
                 // response above is enough to route the user immediately.
-                Online.Clear();
                 SetOnlineIdentity(
                     cloudUser,
                     response.Profile,
@@ -548,10 +570,6 @@ public sealed partial class AppDatabase
                 var cloudUser = response.User
                                  ?? throw new InvalidOperationException(
                                      "Máy chủ không trả về thông tin tài khoản.");
-                SetOnlineIdentity(
-                    cloudUser,
-                    response.Profile,
-                    response.ActiveClub ?? response.Club);
                 Online.Clear();
                 SetOnlineIdentity(
                     cloudUser,
@@ -3245,7 +3263,9 @@ public sealed partial class AppDatabase
             await File.WriteAllBytesAsync(localPath, remote.Bytes);
             profile.PhotoPath = localPath;
         }
-        catch (ApiException)
+        catch (Exception exception) when (exception is ApiException
+                                          or IOException
+                                          or UnauthorizedAccessException)
         {
             // A missing R2 object must not prevent the profile/member page from
             // loading; UiKit.Avatar will render its normal placeholder.
@@ -3283,7 +3303,9 @@ public sealed partial class AppDatabase
             await File.WriteAllBytesAsync(localPath, remote.Bytes);
             club.LogoPath = localPath;
         }
-        catch (ApiException)
+        catch (Exception exception) when (exception is ApiException
+                                          or IOException
+                                          or UnauthorizedAccessException)
         {
             // Keep the team page usable if the private logo object was removed.
         }
@@ -3293,18 +3315,57 @@ public sealed partial class AppDatabase
         string actorUserId,
         IEnumerable<MemberRow> members)
     {
-        foreach (var member in members)
+        await MaterializeProfileImagesAsync(
+            actorUserId,
+            members.Select(member => member.Profile));
+    }
+
+    private async Task MaterializeProfileImagesAsync(
+        string actorUserId,
+        IEnumerable<PersonProfile> profiles)
+    {
+        var uniqueProfiles = profiles
+            .Where(profile => !string.IsNullOrWhiteSpace(profile.PhotoPath)
+                              && !File.Exists(profile.PhotoPath))
+            .GroupBy(profile => profile.UserId, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+        if (uniqueProfiles.Count == 0)
         {
-            await MaterializeProfileImageAsync(actorUserId, member.Profile);
+            return;
         }
+
+        // A member/class page can contain dozens of avatars.  Keep a small
+        // bound so one slow R2 object cannot serialize the entire page while
+        // still avoiding an unbounded burst against the Worker.
+        using var gate = new SemaphoreSlim(4, 4);
+        await Task.WhenAll(uniqueProfiles.Select(async profile =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                await MaterializeProfileImageAsync(actorUserId, profile);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
     }
 
     private async Task<IReadOnlyList<AttendanceRosterItem>> MaterializeAttendanceImagesAsync(
         string actorUserId,
         IEnumerable<AttendanceRosterItem> rows)
     {
-        var materialized = new List<AttendanceRosterItem>();
-        foreach (var row in rows)
+        var sourceRows = rows.ToList();
+        var profiles = sourceRows
+            .Select(row => Online.Profile(row.TraineeUserId))
+            .Where(profile => profile is not null)
+            .Cast<PersonProfile>();
+        await MaterializeProfileImagesAsync(actorUserId, profiles);
+
+        var materialized = new List<AttendanceRosterItem>(sourceRows.Count);
+        foreach (var row in sourceRows)
         {
             var profile = Online.Profile(row.TraineeUserId);
             if (profile is null)
@@ -3523,7 +3584,7 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var onlineTrainingClass = Online.Class(classId)
                                 ?? throw new InvalidOperationException("Không tìm thấy lớp.");
-            EnsureOnlineClassAccess(onlineActor, classId);
+            EnsureOnlineClassAccess(onlineActor, classId, writeAttendance: true);
             var onlineDate = sessionDate.Date;
             if (onlineDate > DateTime.Today)
                 throw new InvalidOperationException("Không thể tạo điểm danh cho ngày tương lai.");
@@ -3629,7 +3690,7 @@ public sealed partial class AppDatabase
         {
             var onlineActor = await RequireOnlineUserAsync(actorUserId);
             await EnsureOnlineSnapshotAsync();
-            EnsureOnlineClassAccess(onlineActor, classId);
+            EnsureOnlineClassAccess(onlineActor, classId, writeAttendance: false);
             return Online.TrainingSessions
                 .Where(item => item.ClassId == classId)
                 .OrderByDescending(item => item.SessionDate)
@@ -3703,7 +3764,7 @@ public sealed partial class AppDatabase
         {
             var onlineActor = await RequireOnlineUserAsync(actorUserId);
             await EnsureOnlineSnapshotAsync();
-            EnsureOnlineClassAccess(onlineActor, classId);
+            EnsureOnlineClassAccess(onlineActor, classId, writeAttendance: false);
 
             var sessionIds = Online.TrainingSessions
                 .Where(item => item.ClassId == classId)
@@ -3751,7 +3812,7 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var onlineSession = Online.Session(sessionId)
                           ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId);
+            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId, writeAttendance: false);
             if (onlineActor.Role == UserRole.Coach)
             {
                 var onlineCheckIn = Online.CheckIn(onlineSession.Id, onlineActor.Id);
@@ -3801,7 +3862,10 @@ public sealed partial class AppDatabase
         var actor = await RequireUserAsync(actorUserId);
         var session = await Database.FindAsync<TrainingSession>(sessionId)
                       ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-        await EnsureClassAccessAsync(actor, session.ClassId, writeAttendance: actor.Role != UserRole.Trainee);
+        await EnsureClassAccessAsync(
+            actor,
+            session.ClassId,
+            writeAttendance: actor.Role is UserRole.Founder or UserRole.CoFounder or UserRole.Coach);
         await EnsureCoachSessionIsOpenAsync(actor, session);
 
         var enrollments = await Database.Table<ClassEnrollment>()
@@ -3900,7 +3964,7 @@ public sealed partial class AppDatabase
                 throw new UnauthorizedAccessException("Tài khoản này không có quyền điểm danh.");
             var onlineSession = Online.Session(sessionId)
                           ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId);
+            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId, writeAttendance: true);
             if (onlineActor.Role == UserRole.Coach)
             {
                 var open = Online.CheckIn(sessionId, onlineActor.Id);
@@ -4490,7 +4554,7 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var onlineSession = Online.Session(sessionId)
                           ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId);
+            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId, writeAttendance: true);
             var onlineTrainingClass = Online.Class(onlineSession.ClassId)
                                 ?? throw new InvalidOperationException("Không tìm thấy lớp.");
             var trainingClass = onlineTrainingClass;
@@ -4680,7 +4744,7 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var onlineSession = Online.Session(sessionId)
                           ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId);
+            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId, writeAttendance: true);
             if (string.IsNullOrWhiteSpace(selfiePath) || !File.Exists(selfiePath))
                 throw new InvalidOperationException("Không tìm thấy hình selfie check-out.");
             var current = Online.CheckIn(sessionId, onlineActor.Id)
@@ -4805,7 +4869,7 @@ public sealed partial class AppDatabase
             await EnsureOnlineSnapshotAsync();
             var onlineSession = Online.Session(sessionId)
                 ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId);
+            EnsureOnlineClassAccess(onlineActor, onlineSession.ClassId, writeAttendance: false);
             var sessionCoachIds = Online.CoachCheckIns
                 .Where(item => item.SessionId == sessionId)
                 .Select(item => item.CoachUserId)
@@ -4832,7 +4896,7 @@ public sealed partial class AppDatabase
         var actor = await RequireUserAsync(actorUserId);
         var session = await Database.FindAsync<TrainingSession>(sessionId)
                       ?? throw new InvalidOperationException("Không tìm thấy buổi học.");
-        await EnsureClassAccessAsync(actor, session.ClassId, writeAttendance: true);
+        await EnsureClassAccessAsync(actor, session.ClassId, writeAttendance: false);
         var checkIns = await Database.Table<CoachCheckIn>()
             .Where(item => item.SessionId == sessionId)
             .ToListAsync();
@@ -5967,7 +6031,7 @@ public sealed partial class AppDatabase
             var actor = await RequireOnlineUserAsync(actorUserId);
             if (actor.Role == UserRole.Trainee && actor.Id != traineeUserId)
             {
-                throw new UnauthorizedAccessException("Báº¡n chá»‰ Ä‘Æ°á»£c xem tiáº¿n Ä‘á»™ há»c phÃ­ cá»§a mÃ¬nh.");
+                throw new UnauthorizedAccessException("Bạn chỉ được xem tiến độ học phí của mình.");
             }
 
             await EnsureOnlineSnapshotAsync();
@@ -6034,7 +6098,7 @@ public sealed partial class AppDatabase
         var localActor = await RequireUserAsync(actorUserId);
         if (localActor.Role == UserRole.Trainee && localActor.Id != traineeUserId)
         {
-            throw new UnauthorizedAccessException("Báº¡n chá»‰ Ä‘Æ°á»£c xem tiáº¿n Ä‘á»™ há»c phÃ­ cá»§a mÃ¬nh.");
+            throw new UnauthorizedAccessException("Bạn chỉ được xem tiến độ học phí của mình.");
         }
 
         var enrollmentLocal = await Database.Table<ClassEnrollment>()
@@ -7040,7 +7104,7 @@ public sealed partial class AppDatabase
                 return await Database.Table<Receipt>()
                            .Where(item => item.InvoiceId == invoice.Id)
                            .FirstOrDefaultAsync()
-                       ?? throw new InvalidOperationException("Backend chÆ°a táº¡o hÃ³a Ä‘Æ¡n xÃ¡c nháº­n.");
+                       ?? throw new InvalidOperationException("Backend chưa tạo hóa đơn xác nhận.");
             }
             catch (ApiException exception)
             {
@@ -8087,6 +8151,13 @@ public sealed partial class AppDatabase
             return;
         }
 
+        // Managers can inspect operational class/session data, but attendance
+        // writes remain restricted to Founder-like roles and assigned Coaches.
+        if (actor.Role == UserRole.Manager && !writeAttendance)
+        {
+            return;
+        }
+
         if (actor.Role == UserRole.Coach)
         {
             var assigned = await Database.Table<ClassCoachAssignment>()
@@ -8116,11 +8187,12 @@ public sealed partial class AppDatabase
         throw new UnauthorizedAccessException("Bạn không có quyền truy cập lớp này.");
     }
 
-    private void EnsureOnlineClassAccess(UserAccount actor, string classId)
+    private void EnsureOnlineClassAccess(UserAccount actor, string classId, bool writeAttendance)
     {
         if (Online.Class(classId) is null)
             throw new InvalidOperationException("Không tìm thấy lớp.");
         if (RoleCapabilities.IsFounderLike(actor.Role)) return;
+        if (actor.Role == UserRole.Manager && !writeAttendance) return;
         if (actor.Role == UserRole.Coach
             && Online.ClassCoaches.Any(item => item.ClassId == classId
                                                && item.CoachUserId == actor.Id
@@ -8410,7 +8482,7 @@ public sealed partial class AppDatabase
             return;
         }
 
-        // D1 is authoritative.  Do not immediately download another full
+        // The Worker/Supabase backend is authoritative. Do not immediately download another full
         // tenant snapshot after a successful write; the mutation has already
         // updated the relevant in-memory row.  Marking the projection stale
         // makes the next screen load reconcile once, rather than making every

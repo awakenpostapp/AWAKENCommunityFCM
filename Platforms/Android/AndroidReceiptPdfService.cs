@@ -102,7 +102,6 @@ public sealed class AndroidReceiptPdfService : IReceiptPdfService
         paint.TextSize = 11;
         paint.SetTypeface(Typeface.Create("sans-serif", TypefaceStyle.Normal));
         canvas.DrawText("Hóa đơn được tạo bởi AWAKEN Community FCM.", 48, 785, paint);
-        canvas.DrawText("Dữ liệu bản offline được lưu trên thiết bị.", 48, 804, paint);
     }
 
     private static void DrawRow(

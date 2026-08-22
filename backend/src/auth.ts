@@ -313,9 +313,19 @@ export async function rotateRefreshToken(env: Env, request: Request, token: stri
 
   const nextToken = `${session.id}.${randomSecret()}`;
   const fingerprint = await requestFingerprint(request, env);
-  await env.DB.prepare(
-    "UPDATE auth_sessions SET refresh_token_hash = ?, ip_hash = ?, user_agent = ?, last_used_at = ? WHERE id = ?",
-  ).bind(await sha256(nextToken), fingerprint.ipHash, fingerprint.userAgent, nowIso(), session.id).run();
+  const nextHash = await sha256(nextToken);
+  // Refresh rotation is a compare-and-swap operation.  Without the previous
+  // hash in the predicate, two concurrent refresh requests can both succeed
+  // and mint two valid refresh tokens from one source token.
+  const rotated = await env.DB.prepare(
+    `UPDATE auth_sessions
+        SET refresh_token_hash = ?, ip_hash = ?, user_agent = ?, last_used_at = ?
+      WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL`,
+  ).bind(nextHash, fingerprint.ipHash, fingerprint.userAgent, nowIso(), session.id, session.refresh_token_hash).run();
+  if (!rotated.meta.changes) {
+    await revokeSession(env, session.id);
+    throw new ApiError(401, "invalid_refresh_token", "Refresh token đã được sử dụng hoặc không còn hiệu lực.");
+  }
   return {
     ...(await accessToken(env, user, session.id)),
     refreshToken: nextToken,

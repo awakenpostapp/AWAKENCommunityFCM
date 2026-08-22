@@ -629,7 +629,7 @@ public sealed class CloudApiClient
                     throw new ApiException(
                         HttpStatusCode.Unauthorized,
                         "session_unavailable",
-                        "PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i.");
+                        "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
                 }
             }
 
@@ -672,7 +672,7 @@ public sealed class CloudApiClient
         throw new ApiException(
             HttpStatusCode.Unauthorized,
             "session_unavailable",
-            "PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i.");
+            "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
     }
 
     private async Task SendWithoutResponseAsync(

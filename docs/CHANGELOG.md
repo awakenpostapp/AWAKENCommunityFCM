@@ -1,5 +1,34 @@
 # Change log
 
+## Release 3.3 — build 117 — 2026-08-22
+
+- Phát hành bản build gồm toàn bộ hardening A → D → B → C: bảo vệ backend,
+  backup/release workflow, tối ưu snapshot online và UX/error handling.
+- Tạo đủ Release APK, Release AAB và Debug APK; chỉ Release APK được publish
+  lên GitHub Release.
+- Giữ nguyên ApplicationId, version hiển thị 3.3, database, Cloudflare,
+  Supabase, R2, OAuth và dữ liệu nghiệp vụ.
+
+## Engineering hardening — 2026-08-22 (build unchanged: 116)
+
+- **A — Backend correctness:** thêm các guard compare-and-swap cho refresh
+  session, duyệt bill/check-in, snapshot idempotency; giới hạn audit client
+  theo action/entity/role; bảo vệ xoá account khi R2 chưa sẵn sàng; chuẩn hoá
+  truy vấn sort tương thích Supabase/PostgreSQL.
+- **D — Vận hành:** bổ sung workflow backup online Supabase (pg_dump), D1
+  export, inventory R2 và checksum; workflow Android luôn tạo Release APK,
+  Release AAB và Debug APK nhưng chỉ publish Release APK lên GitHub Release.
+- **B — Hiệu năng online:** refresh snapshot truyền `afterSyncVersion`, nhận
+  phản hồi `unchanged` nhỏ khi dữ liệu không đổi; giữ projection online
+  memory-only, không khởi tạo SQLite khi online; thêm giới hạn tải avatar song
+  song.
+- **C — UX/an toàn:** lỗi khởi động và lỗi mạng dùng thông báo an toàn; bỏ dòng
+  footer offline cũ khỏi hoá đơn PDF; giữ loading overlay và semantic icon cho
+  đăng nhập/tạo tài khoản. Chưa triển khai đa ngôn ngữ theo yêu cầu.
+- Checkpoint: 35/35 backend tests pass, Worker typecheck/build/dry-run pass,
+  production smoke health pass, Android Debug build pass.
+
+
 ## Release 3.3 — build 116 — 2026-08-20
 
 - Sắp xếp nhóm thành viên Founder theo thứ tự Đồng Sáng Lập, Quản Lý,

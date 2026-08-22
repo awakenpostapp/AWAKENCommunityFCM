@@ -6,6 +6,13 @@ import {
 import { ApiError, optionalText, requireDateKey, requireInteger, requireText } from "./http";
 import { allRows, assertTenantEntity } from "./repository";
 import { isFounderLike } from "./authorization";
+import {
+  AUTO_ABSENT_REVIEW_NOTE,
+  HISTORICAL_MANUAL_COACH_REVIEW_NOTE,
+  SAFETY_CLOSED_REVIEW_NOTE,
+} from "./attendance-state";
+
+export { AUTO_ABSENT_REVIEW_NOTE, SAFETY_CLOSED_REVIEW_NOTE } from "./attendance-state";
 
 type Row = Record<string, unknown>;
 
@@ -183,11 +190,10 @@ const USER_PUBLIC_COLUMNS = `id, tenant_id, username, email, role, is_active,
 export const MAX_OPEN_CHECKIN_SECONDS = 8 * 60 * 60;
 export const CHECKIN_OPEN_LEAD_MINUTES = 60;
 export const CHECKIN_LOCK_AFTER_END_MINUTES = 120;
-export const AUTO_ABSENT_REVIEW_NOTE = "AUTO_ABSENT_NO_CHECKIN";
 export const FOUNDER_SUBSTITUTED_COACH_REVIEW_NOTE = "FOUNDER_SUBSTITUTED_COACH";
 export const FOUNDER_NO_ATTENDANCE_REVIEW_NOTE = "FOUNDER_NO_ATTENDANCE";
 const HISTORICAL_SUBSTITUTION_MARKER = "Coach không dạy; Founder điểm danh thay Coach";
-const HISTORICAL_MANUAL_MARKER = "Founder ghi nhận buổi học cũ; Coach đã dạy";
+const HISTORICAL_MANUAL_MARKER = HISTORICAL_MANUAL_COACH_REVIEW_NOTE;
 const HISTORICAL_NO_ATTENDANCE_MARKER = "Coach không dạy (Founder không điểm danh dạy)";
 const VIETNAM_UTC_OFFSET_MINUTES = 7 * 60;
 
@@ -518,9 +524,10 @@ export async function autoCloseStaleCheckIns(
     }
     const closeAt = new Date(checkedInMs + MAX_OPEN_CHECKIN_SECONDS * 1000).toISOString();
     return [env.DB.prepare(
-      `UPDATE coach_checkins SET checked_out_at=?, duration_seconds=?, checkout_selfie_object_key=''
-       WHERE id=? AND tenant_id=? AND checked_out_at IS NULL`,
-    ).bind(closeAt, MAX_OPEN_CHECKIN_SECONDS, row.id, tenantId)];
+      `UPDATE coach_checkins SET checked_out_at=?, duration_seconds=?, checkout_selfie_object_key='',
+       approval_status='rejected', review_note=?
+       WHERE id=? AND tenant_id=? AND checked_out_at IS NULL AND approval_status='pending'`,
+    ).bind(closeAt, MAX_OPEN_CHECKIN_SECONDS, SAFETY_CLOSED_REVIEW_NOTE, row.id, tenantId)];
   });
   if (updates.length > 0) {
     // D1 batches are atomic; keep the batch bounded in case an old tenant has
@@ -544,14 +551,15 @@ async function recomputePendingCoachSalaries(env: Env, tenantId: string): Promis
        WHERE ci.tenant_id=coach_salaries.tenant_id
          AND ci.coach_user_id=coach_salaries.coach_user_id
          AND ci.approval_status='approved'
-         AND ci.checked_out_at IS NOT NULL
+        AND ci.checked_out_at IS NOT NULL
         AND (ci.checkout_selfie_object_key <> ''
              OR ci.review_note LIKE '%Founder ghi nhận buổi học cũ; Coach đã dạy%')
+        AND ci.review_note NOT IN (?, ?)
          AND substr(ts.session_date, 1, 7)=coach_salaries.period
      ), 0),
      updated_at=?
      WHERE tenant_id=? AND status='pending'`,
-  ).bind(nowIso(), tenantId).run();
+  ).bind(AUTO_ABSENT_REVIEW_NOTE, SAFETY_CLOSED_REVIEW_NOTE, nowIso(), tenantId).run();
 }
 
 async function recomputePendingCoachSalaryDueDates(env: Env, tenantId: string): Promise<void> {
@@ -571,9 +579,10 @@ async function recomputePendingCoachSalaryDueDates(env: Env, tenantId: string): 
         AND ci.checked_out_at IS NOT NULL
         AND (ci.checkout_selfie_object_key<>''
              OR ci.review_note LIKE '%Founder ghi nhận buổi học cũ; Coach đã dạy%')
+        AND ci.review_note NOT IN (?, ?)
         AND substr(ts.session_date, 1, 7)=cs.period
       GROUP BY cs.id, cs.due_date`,
-  ).bind(tenantId));
+  ).bind(tenantId, AUTO_ABSENT_REVIEW_NOTE, SAFETY_CLOSED_REVIEW_NOTE));
   const statements = rows.flatMap((row) => {
     const dueDate = salaryDueDateForConfirmation(row.confirmed_at);
     return dueDate === row.due_date
@@ -1496,7 +1505,7 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
           "SELECT is_tuition_supported FROM users WHERE id=? AND tenant_id=? LIMIT 1",
         ).bind(traineeUserId, tenantId).first<{ is_tuition_supported: number }>();
         if (supported?.is_tuition_supported === 1) {
-          throw new ApiError(400, "trial_not_allowed", "Cáº§u thá»§ Ä‘Æ°á»£c há»— trá»£ khÃ´ng thá»ƒ Ä‘Äƒng kÃ½ há»c thá»­.");
+          throw new ApiError(400, "trial_not_allowed", "Cầu thủ được hỗ trợ không thể đăng ký học thử.");
         }
       }
       statements.push(env.DB.prepare(

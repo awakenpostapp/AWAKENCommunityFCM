@@ -1,5 +1,31 @@
 # Change log
 
+Release 3.3 - build 117 - 2026-08-22
+
+- Phat hanh build gom hardening A -> D -> B -> C: bao ve backend,
+  backup/release workflow, toi uu snapshot online va UX/error handling.
+- Tao du Release APK, Release AAB va Debug APK; chi Release APK duoc publish
+  len GitHub Release.
+- Giu nguyen ApplicationId, version hien thi 3.3, database, Cloudflare,
+  Supabase, R2, OAuth va du lieu nghiep vu.
+
+Engineering hardening - 2026-08-22 (khong tang version/build; giu build 116)
+
+- A - Backend: them guard compare-and-swap cho refresh session, duyet
+  bill/check-in va snapshot idempotency; gioi han audit client theo role;
+  bao ve xoa account khi R2 chua san sang; sort tuong thich Supabase.
+- D - Van hanh: them workflow backup Supabase (pg_dump), D1 export, inventory
+  R2 va checksum; workflow Android tao Release APK, Release AAB, Debug APK,
+  nhung chi publish Release APK len GitHub Release.
+- B - Hieu nang online: snapshot refresh truyen afterSyncVersion va nhan
+  unchanged response; projection online memory-only, khong khoi tao SQLite;
+  gioi han tai avatar song song.
+- C - UX/an toan: thong bao loi khoi dong/mang an toan; bo footer offline cu
+  trong hoa don PDF; giu loading overlay va semantic icon. Chua lam da ngon
+  ngu theo yeu cau.
+- Checkpoint: 35/35 backend tests, Worker typecheck/build/dry-run, smoke health
+  production va Android Debug build deu pass.
+
 Release 3.3 - build 116 - 2026-08-20
 
 - Sap xep nhom thanh vien Founder theo thu tu Dong Sang Lap, Quan Ly,

@@ -5,6 +5,14 @@ namespace CommunityFootballClubManager.Ui;
 public abstract class AsyncContentPage : ContentPage
 {
     private bool _loading;
+    private bool _appearingReload;
+    private bool _hasLoaded;
+    private DateTime _lastLoadedAtUtc;
+
+    // Navigation back to a tab should not refetch the same online snapshot on
+    // every Appearing event.  Explicit retries/actions still reload immediately
+    // because they run outside this guarded Appearing window.
+    private static readonly TimeSpan AppearingFreshness = TimeSpan.FromSeconds(20);
 
     protected AsyncContentPage(SessionService session, string title)
     {
@@ -22,7 +30,15 @@ public abstract class AsyncContentPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
-        await ReloadAsync();
+        _appearingReload = true;
+        try
+        {
+            await ReloadAsync();
+        }
+        finally
+        {
+            _appearingReload = false;
+        }
     }
 
     protected async Task ReloadAsync()
@@ -32,13 +48,26 @@ public abstract class AsyncContentPage : ContentPage
             return;
         }
 
+        if (_appearingReload
+            && _hasLoaded
+            && DateTime.UtcNow - _lastLoadedAtUtc < AppearingFreshness)
+        {
+            return;
+        }
+
         _loading = true;
         try
         {
             await LoadAsync();
+            _hasLoaded = true;
+            _lastLoadedAtUtc = DateTime.UtcNow;
         }
         catch (Exception exception)
         {
+            // Do not let a failed explicit refresh make the stale page look
+            // fresh on the next Appearing event; the retry must be allowed to
+            // hit the backend again.
+            _hasLoaded = false;
             Content = UiKit.ScrollBody(UiKit.EmptyState(
                 "Không thể tải dữ liệu",
                 UserMessage(exception),
@@ -102,8 +131,10 @@ public abstract class AsyncContentPage : ContentPage
         }
     }
 
-    protected static string UserMessage(Exception exception) => exception switch
+    public static string UserMessage(Exception exception) => exception switch
     {
+        TimeoutException => "Kết nối đang chậm. Vui lòng thử lại.",
+        HttpRequestException => "Không thể kết nối máy chủ. Vui lòng thử lại.",
         UnauthorizedAccessException => exception.Message,
         InvalidOperationException => exception.Message,
         NotSupportedException => exception.Message,

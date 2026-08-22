@@ -2,19 +2,12 @@ name: Android release artifacts
 
 on:
   workflow_dispatch:
-    inputs:
-      configuration:
-        description: 'Build configuration'
-        required: true
-        default: Release
-        type: choice
-        options: [Release, Debug]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  artifacts:
+  release:
     runs-on: windows-latest
     env:
       COMMUNITY_FOOTBALL_KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
@@ -28,23 +21,49 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet workload install maui-android
       - run: dotnet restore CommunityFootballClubManager.csproj
-      - name: Restore signing keystore when configured
-        if: ${{ inputs.configuration == 'Release' }}
+      - name: Clean generated artifacts
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath artifacts) {
+            Remove-Item -LiteralPath artifacts -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+      - name: Restore signing keystore
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:ANDROID_KEYSTORE_BASE64)) { throw 'ANDROID_KEYSTORE_BASE64 secret is required for Release.' }
           [IO.File]::WriteAllBytes('community-release.keystore', [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
           "COMMUNITY_FOOTBALL_KEYSTORE_PATH=$((Resolve-Path community-release.keystore).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build APK
+      - name: Build Release APK
         shell: pwsh
-        run: ./scripts/Build-AndroidArtifact.ps1 -Configuration '${{ inputs.configuration }}'
-      - name: Build AAB
-        if: ${{ inputs.configuration == 'Release' }}
+        run: ./scripts/Build-AndroidArtifact.ps1 -Configuration Release
+      - name: Build Release AAB (not published)
         shell: pwsh
         run: ./scripts/Build-AndroidArtifact.ps1 -Configuration Release -Bundle
-      - uses: actions/upload-artifact@v4
-        with:
-          name: awaken-community-fcm-${{ inputs.configuration }}-${{ github.run_number }}
-          path: artifacts/AWAKENCommunityFCM-*
-          if-no-files-found: error
-          retention-days: 30
+      - name: Build Debug APK (not published)
+        shell: pwsh
+        run: ./scripts/Build-AndroidArtifact.ps1 -Configuration Debug
+      - name: Resolve versioned Release APK
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath CommunityFootballClubManager.csproj
+          $propertyGroup = $project.Project.PropertyGroup | Select-Object -First 1
+          $displayVersion = [string]$propertyGroup.ApplicationDisplayVersion
+          $buildNumber = [string]$propertyGroup.ApplicationVersion
+          $apk = Get-ChildItem -LiteralPath artifacts -File -Filter "AWAKENCommunityFCM-v$displayVersion-build$buildNumber-Release*.apk" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($null -eq $apk) { throw "Không tìm thấy Release APK có version/build trong artifacts/." }
+          "RELEASE_APK=$($apk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_TAG=build-v$displayVersion-$buildNumber-${{ github.run_id }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_TITLE=AWAKEN Community FCM v$displayVersion (build $buildNumber)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Output "Release APK: $($apk.Name)"
+      - name: Publish Release APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create $env:RELEASE_TAG $env:RELEASE_APK `
+            --repo "${{ github.repository }}" `
+            --target "${{ github.sha }}" `
+            --title "$env:RELEASE_TITLE" `
+            --notes "Release APK only. AAB and Debug APK were built for validation and are intentionally not published."

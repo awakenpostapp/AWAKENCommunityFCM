@@ -103,7 +103,7 @@ public sealed class BootstrapPage : ContentPage
                     },
                     new Label
                     {
-                        Text = exception.Message,
+                        Text = AsyncContentPage.UserMessage(exception),
                         TextColor = UiKit.TextSecondary,
                         HorizontalTextAlignment = TextAlignment.Center
                     }

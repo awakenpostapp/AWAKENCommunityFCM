@@ -98,6 +98,16 @@ public sealed class LoginPage : ContentPage
             HorizontalOptions = LayoutOptions.End
         };
         forgotButton.Clicked += async (_, _) =>
+        {
+            if (_database.IsOnline)
+            {
+                await DisplayAlertAsync(
+                    "Đặt lại mật khẩu online",
+                    "Vui lòng liên hệ Admin hoặc Sáng lập & Điều hành để xác minh và đặt lại mật khẩu.",
+                    "Đóng");
+                return;
+            }
+
             await Navigation.PushAsync(new ForgotPasswordPage(
                 _database,
                 _rememberedLogin,
@@ -109,6 +119,7 @@ public sealed class LoginPage : ContentPage
                     _errorLabel.IsVisible = false;
                     _passwordEntry.Focus();
                 }));
+        };
 
         var googleLogin = UiKit.SecondaryButton("Đăng nhập với Google");
         googleLogin.Clicked += async (_, _) => await LoginWithGoogleAsync(googleLogin);

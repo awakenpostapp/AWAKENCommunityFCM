@@ -23,7 +23,7 @@ public sealed record ClassRow(
     public string ScheduleText =>
         $"{DomainText.Weekdays(Class.ScheduleDays)} · {DomainText.TimeRange(Class.StartTimeMinutes, Class.EndTimeMinutes)}";
     public string CoachNames => Coaches.Count == 0
-        ? "ChÆ°a phÃ¢n cÃ´ng Coach"
+        ? "Chưa phân công Coach"
         : string.Join(", ", Coaches.Select(item =>
             $"{item.DisplayName} · {CoachPositionCatalog.Label(item.Profile.CoachPosition)}"));
 }

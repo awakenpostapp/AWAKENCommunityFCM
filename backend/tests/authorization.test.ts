@@ -6,6 +6,7 @@ import {
   canCreateMember,
   canDeleteTarget,
   canEditMemberProfile,
+  canReadClass,
   isFounderLike,
 } from "../src/authorization.ts";
 
@@ -26,4 +27,13 @@ test("co-founder has founder capabilities but cannot delete a co-founder", () =>
 test("manager cannot change profiles or account status", () => {
   assert.equal(canEditMemberProfile("manager", "coach"), false);
   assert.equal(canChangeAccountStatus("manager", "trainee"), false);
+});
+
+test("class visibility allows management and assigned operational roles", () => {
+  assert.equal(canReadClass("founder"), true);
+  assert.equal(canReadClass("co_founder"), true);
+  assert.equal(canReadClass("manager"), true);
+  assert.equal(canReadClass("coach"), true);
+  assert.equal(canReadClass("trainee"), true);
+  assert.equal(canReadClass("admin"), false);
 });

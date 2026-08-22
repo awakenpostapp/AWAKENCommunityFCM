@@ -4,7 +4,8 @@ namespace CommunityFootballClubManager.Services.Online;
 
 /// <summary>
 /// Volatile, in-memory view of the currently authenticated Cloud tenant.
-/// D1 remains the source of truth; this projection is cleared on logout.
+/// The Worker/Supabase backend remains the source of truth; this projection
+/// is cleared on logout.
 /// </summary>
 public sealed class OnlineDataState
 {

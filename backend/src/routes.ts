@@ -54,6 +54,12 @@ import {
   assertCanEditMemberProfile,
 } from "./route-authorization";
 import { CREATABLE_TENANT_USER_ROLES, isFounderLike } from "./authorization";
+import {
+  AUTO_ABSENT_REVIEW_NOTE as STATE_AUTO_ABSENT_REVIEW_NOTE,
+  SAFETY_CLOSED_REVIEW_NOTE,
+  canApproveCoachCheckIn,
+  canSubmitCoachCheckOut,
+} from "./attendance-state";
 
 type JsonObject = Record<string, unknown>;
 
@@ -451,6 +457,12 @@ export async function adminFounderAction(
   const uploads = await allRows<{ object_key: string }>(env.DB.prepare(
     "SELECT object_key FROM uploads WHERE tenant_id = ?",
   ).bind(tenantId));
+  // A hard delete must not remove the tenant metadata while leaving private
+  // R2 objects orphaned.  If the tenant owns uploads, require the storage
+  // binding before starting the destructive database transaction.
+  if (uploads.length > 0 && !env.FILES) {
+    throw new ApiError(503, "storage_unavailable", "Không thể xóa account khi R2 chưa sẵn sàng. Vui lòng thử lại sau.");
+  }
   await env.DB.batch([
     // Delete audit/idempotency rows explicitly because those tables retain
     // tenant references with SET NULL for normal lifecycle operations.
@@ -976,7 +988,7 @@ export async function evaluations(request: Request, env: Env, evaluationId?: str
           AND (?='' OR te.class_id=?)
           AND (?='' OR te.trainee_user_id=?)
           AND (
-            ?='founder'
+            ? IN ('founder', 'co_founder')
             OR (?='trainee' AND te.trainee_user_id=?)
             OR (?='coach' AND EXISTS (
               SELECT 1 FROM class_coaches cc
@@ -1159,7 +1171,7 @@ export async function evaluationRoster(request: Request, env: Env): Promise<Resp
        LEFT JOIN profiles p
          ON p.user_id=u.id AND p.tenant_id=ce.tenant_id
       WHERE ce.tenant_id=? AND ce.class_id=? AND ce.is_active=1
-      ORDER BY full_name COLLATE NOCASE`,
+      ORDER BY lower(full_name)`,
   ).bind(tenantId, classId));
 
   return json({
@@ -1671,7 +1683,7 @@ export async function checkIn(request: Request, env: Env): Promise<Response> {
   const classRow = await env.DB.prepare(
     "SELECT start_time_minutes, end_time_minutes FROM classes WHERE id=? AND tenant_id=? LIMIT 1",
   ).bind(classId, tenantId).first<{ start_time_minutes: number; end_time_minutes: number }>();
-  if (!classRow) throw new ApiError(404, "not_found", "KhÃ´ng tÃ¬m tháº¥y lá»›p.");
+  if (!classRow) throw new ApiError(404, "not_found", "Không tìm thấy lớp.");
   const [year, month, day] = sessionDate.split("-").map(Number);
   const scheduledStart = new Date(Date.UTC(year!, month! - 1, day!, 0, 0, 0) + classRow.start_time_minutes * 60_000 - 7 * 60 * 60_000);
   const scheduledEnd = new Date(Date.UTC(year!, month! - 1, day!, 0, 0, 0) + classRow.end_time_minutes * 60_000 - 7 * 60 * 60_000);
@@ -1753,33 +1765,48 @@ export async function checkOut(request: Request, env: Env): Promise<Response> {
     requireText(body.uploadId, "uploadId", 64), "checkout_selfie");
   const now = nowIso();
   const openCheckIn = await env.DB.prepare(
-    `SELECT id, checked_in_at, checked_out_at, checkout_selfie_object_key, duration_seconds
+    `SELECT id, checked_in_at, checked_out_at, checkin_selfie_object_key,
+            checkout_selfie_object_key, duration_seconds, approval_status, review_note
      FROM coach_checkins
      WHERE tenant_id=? AND session_id=? AND coach_user_id=?
-       AND (checked_out_at IS NULL OR checkout_selfie_object_key='') LIMIT 1`,
-  ).bind(tenantId, sessionId, auth.id).first<{
+       AND checked_out_at IS NULL
+       AND checkin_selfie_object_key <> ''
+       AND approval_status='pending'
+       AND review_note NOT IN (?, ?) LIMIT 1`,
+  ).bind(tenantId, sessionId, auth.id, STATE_AUTO_ABSENT_REVIEW_NOTE, SAFETY_CLOSED_REVIEW_NOTE).first<{
     id: string;
     checked_in_at: string;
     checked_out_at: string | null;
+    checkin_selfie_object_key: string;
     checkout_selfie_object_key: string;
     duration_seconds: number;
+    approval_status: string;
+    review_note: string;
   }>();
   if (!openCheckIn) throw new ApiError(409, "not_checked_in", "Không có check-in đang mở.");
+  if (!canSubmitCoachCheckOut({
+    checkedInAt: openCheckIn.checked_in_at,
+    checkedOutAt: openCheckIn.checked_out_at,
+    checkinSelfieObjectKey: openCheckIn.checkin_selfie_object_key,
+    checkoutSelfieObjectKey: openCheckIn.checkout_selfie_object_key,
+    approvalStatus: openCheckIn.approval_status,
+    reviewNote: openCheckIn.review_note,
+  })) {
+    throw new ApiError(409, "not_checked_in", "Không có check-in đang mở.");
+  }
   const checkedInMs = Date.parse(openCheckIn.checked_in_at);
   const checkedOutMs = Date.parse(now);
-  const safetyClosed = Boolean(openCheckIn.checked_out_at)
-    && !openCheckIn.checkout_selfie_object_key;
-  const durationSeconds = safetyClosed
-    ? Math.max(1, Number(openCheckIn.duration_seconds ?? 0))
-    : Number.isFinite(checkedInMs) && Number.isFinite(checkedOutMs)
-      ? Math.min(MAX_OPEN_CHECKIN_SECONDS,
-        Math.max(0, Math.floor((checkedOutMs - checkedInMs) / 1000)))
-      : 0;
+  const durationSeconds = Number.isFinite(checkedInMs) && Number.isFinite(checkedOutMs)
+    ? Math.min(MAX_OPEN_CHECKIN_SECONDS,
+      Math.max(0, Math.floor((checkedOutMs - checkedInMs) / 1000)))
+    : 0;
   const result = await env.DB.prepare(
     `UPDATE coach_checkins SET checkout_selfie_object_key=?, checked_out_at=?, duration_seconds=?
      WHERE tenant_id=? AND session_id=? AND coach_user_id=?
-       AND (checked_out_at IS NULL OR checkout_selfie_object_key='')`,
-  ).bind(objectKey, now, durationSeconds, tenantId, sessionId, auth.id).run();
+       AND checked_out_at IS NULL AND checkin_selfie_object_key <> ''
+       AND approval_status='pending' AND review_note NOT IN (?, ?)`,
+  ).bind(objectKey, now, durationSeconds, tenantId, sessionId, auth.id,
+    STATE_AUTO_ABSENT_REVIEW_NOTE, SAFETY_CLOSED_REVIEW_NOTE).run();
   if (!result.meta.changes) throw new ApiError(409, "not_checked_in", "Không có check-in đang mở.");
   await env.DB.prepare(
     `UPDATE training_sessions SET status='submitted', submitted_by_user_id=?, submitted_at=?, updated_at=?
@@ -1807,7 +1834,18 @@ export async function reviewCheckIn(request: Request, env: Env, id: string): Pro
     "SELECT * FROM coach_checkins WHERE id=? AND tenant_id=? LIMIT 1",
   ).bind(id, tenantId).first<Record<string, unknown>>();
   if (!checkInRow) throw new ApiError(404, "not_found", "Không tìm thấy check-in.");
-  if (!checkInRow.checked_out_at || !checkInRow.checkout_selfie_object_key) {
+  const checkInState = {
+    checkedInAt: String(checkInRow.checked_in_at ?? ""),
+    checkedOutAt: checkInRow.checked_out_at ? String(checkInRow.checked_out_at) : null,
+    checkinSelfieObjectKey: String(checkInRow.checkin_selfie_object_key ?? ""),
+    checkoutSelfieObjectKey: String(checkInRow.checkout_selfie_object_key ?? ""),
+    approvalStatus: String(checkInRow.approval_status ?? ""),
+    reviewNote: String(checkInRow.review_note ?? ""),
+  };
+  if (!canApproveCoachCheckIn(checkInState)) {
+    if (checkInState.approvalStatus !== "pending") {
+      throw new ApiError(409, "checkin_not_pending", "Check-in này không còn chờ xác nhận. Coach cần gửi lại selfie nếu bị từ chối.");
+    }
     throw new ApiError(409, "checkout_required",
       "Founder chỉ có thể xác nhận sau khi Coach đã check-out và gửi đủ ảnh check-in, check-out.");
   }
@@ -1817,19 +1855,23 @@ export async function reviewCheckIn(request: Request, env: Env, id: string): Pro
   const now = nowIso();
   const statements: D1PreparedStatement[] = [env.DB.prepare(
     `UPDATE coach_checkins SET approval_status=?, reviewed_by_user_id=?, reviewed_at=?, review_note=?
-     WHERE id=? AND tenant_id=?`,
+     WHERE id=? AND tenant_id=? AND approval_status='pending'`,
   ).bind(status, auth.id, now, optionalText(body.note, "note", 500), id, tenantId)];
   if (status === "approved" && checkInRow.approval_status !== "approved") {
     const period = String(checkInRow.checked_in_at).slice(0, 7);
     const dueDate = salaryDueDateForConfirmation(now);
     statements.push(env.DB.prepare(
       `INSERT INTO coach_salaries (id, tenant_id, coach_user_id, period, amount_vnd, due_date, status, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+       SELECT ?, ?, coach_user_id, ?, ?, ?, 'pending', ?
+       FROM coach_checkins
+       WHERE id=? AND tenant_id=? AND approval_status='approved'
+         AND reviewed_by_user_id=? AND reviewed_at=?
        ON CONFLICT(coach_user_id, period) DO UPDATE SET
        amount_vnd=coach_salaries.amount_vnd+excluded.amount_vnd, updated_at=excluded.updated_at
        WHERE coach_salaries.tenant_id=excluded.tenant_id`,
-    ).bind(newId(), tenantId, checkInRow.coach_user_id, period,
-       Number(checkInRow.salary_per_session_vnd_snapshot ?? 0), dueDate, now));
+    ).bind(newId(), tenantId, period,
+       Number(checkInRow.salary_per_session_vnd_snapshot ?? 0), dueDate, now,
+       id, tenantId, auth.id, now));
   }
   if (status === "rejected") {
     // Rejection is a retryable outcome, not a terminal session state.  Reset
@@ -1840,7 +1882,10 @@ export async function reviewCheckIn(request: Request, env: Env, id: string): Pro
        submitted_at=NULL, updated_at=? WHERE id=? AND tenant_id=?`,
     ).bind(now, String(checkInRow.session_id), tenantId));
   }
-  await env.DB.batch(statements);
+  const results = await env.DB.batch(statements);
+  if ((results[0]?.meta?.changes ?? 0) !== 1) {
+    throw new ApiError(409, "checkin_not_pending", "Check-in vừa được xử lý bởi người khác. Vui lòng tải lại.");
+  }
   await env.DB.prepare(
     `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
      SELECT ?, ?, coach_user_id, 'coach_checkin', ?, ?, ?, ?
@@ -2110,7 +2155,10 @@ export async function reviewProof(request: Request, env: Env, proofId: string): 
   assertCanApproveOperations(auth.role);
   const tenantId = requireTenant(auth);
   const body = await readJson<JsonObject>(request);
-  const accepted = body.accepted === true;
+  if (typeof body.accepted !== "boolean") {
+    throw new ApiError(400, "validation_error", "accepted phải là boolean.");
+  }
+  const accepted = body.accepted;
   const proof = await env.DB.prepare("SELECT * FROM payment_proofs WHERE id=? AND tenant_id=?")
     .bind(proofId, tenantId).first<Record<string, unknown>>();
   if (!proof) throw new ApiError(404, "not_found", "Không tìm thấy bill.");
@@ -2126,29 +2174,44 @@ export async function reviewProof(request: Request, env: Env, proofId: string): 
   ).bind(auth.id, proof.invoice_id, tenantId).first<Record<string, unknown>>();
   if (!invoice) throw new ApiError(404, "not_found", "Không tìm thấy khoản học phí.");
   const now = nowIso();
-  const statements: D1PreparedStatement[] = [
-    env.DB.prepare(
-      "UPDATE payment_proofs SET review_status=?, reviewed_by_user_id=?, reviewed_at=? WHERE id=? AND tenant_id=?",
-    ).bind(accepted ? "accepted" : "rejected", auth.id, now, proofId, tenantId),
-    env.DB.prepare("UPDATE tuition_invoices SET status=?, updated_at=? WHERE id=? AND tenant_id=?")
-      .bind(accepted ? "paid" : "rejected", now, proof.invoice_id, tenantId),
-  ];
+  // Claim the proof first.  The pending predicate is the compare-and-swap
+  // that makes two Founder/Manager review taps converge on one decision.
+  const claimed = await env.DB.prepare(
+    `UPDATE payment_proofs
+        SET review_status=?, reviewed_by_user_id=?, reviewed_at=?
+      WHERE id=? AND tenant_id=? AND review_status='pending'`,
+  ).bind(accepted ? "accepted" : "rejected", auth.id, now, proofId, tenantId).run();
+  if (!claimed.meta.changes) {
+    throw new ApiError(409, "payment_proof_already_reviewed", "Bill này đã được xử lý. Vui lòng tải lại danh sách.");
+  }
+
+  const invoiceUpdate = await env.DB.prepare(
+    `UPDATE tuition_invoices SET status=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status IN ('pending', 'proof_submitted')`,
+  ).bind(accepted ? "paid" : "rejected", now, proof.invoice_id, tenantId).run();
+  if (!invoiceUpdate.meta.changes) {
+    // Keep the proof retryable if the invoice was changed between the read and
+    // the state claim. This compensating CAS is safe for the claimant only.
+    await env.DB.prepare(
+      `UPDATE payment_proofs
+          SET review_status='pending', reviewed_by_user_id=NULL, reviewed_at=NULL
+        WHERE id=? AND tenant_id=? AND review_status=? AND reviewed_by_user_id=? AND reviewed_at=?`,
+    ).bind(proofId, tenantId, accepted ? "accepted" : "rejected", auth.id, now).run();
+    throw new ApiError(409, "tuition_invoice_already_reviewed", "Khoản học phí đã được xử lý bởi người khác. Vui lòng tải lại.");
+  }
+
+  const statements: D1PreparedStatement[] = [];
   if (accepted) {
-    const existingReceipt = await env.DB.prepare(
-      "SELECT id FROM receipts WHERE invoice_id=? AND tenant_id=? LIMIT 1",
-    ).bind(proof.invoice_id, tenantId).first<{ id: string }>();
-    if (!existingReceipt) {
-      const receiptId = newId();
-      const receiptNumber = `CFC-${now.slice(0, 10).replaceAll("-", "")}-${String(proof.invoice_id).slice(0, 6).toUpperCase()}`;
-      statements.push(env.DB.prepare(
-        `INSERT INTO receipts (id, tenant_id, invoice_id, receipt_number, team_name_snapshot,
-         trainee_name_snapshot, class_name_snapshot, cycle_snapshot, amount_vnd_snapshot,
-         confirmed_by_name_snapshot, confirmed_at, pdf_object_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
-      ).bind(receiptId, tenantId, proof.invoice_id, receiptNumber, invoice.team_name,
-        invoice.trainee_name, invoice.class_name, `Chu kỳ ${invoice.cycle_number}`,
-        Number(invoice.amount_vnd ?? 0), invoice.founder_name, now));
-    }
+    const receiptId = newId();
+    const receiptNumber = `CFC-${now.slice(0, 10).replaceAll("-", "")}-${String(proof.invoice_id).slice(0, 6).toUpperCase()}`;
+    statements.push(env.DB.prepare(
+      `INSERT OR IGNORE INTO receipts (id, tenant_id, invoice_id, receipt_number, team_name_snapshot,
+       trainee_name_snapshot, class_name_snapshot, cycle_snapshot, amount_vnd_snapshot,
+       confirmed_by_name_snapshot, confirmed_at, pdf_object_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+    ).bind(receiptId, tenantId, proof.invoice_id, receiptNumber, invoice.team_name,
+      invoice.trainee_name, invoice.class_name, `Chu kỳ ${invoice.cycle_number}`,
+      Number(invoice.amount_vnd ?? 0), invoice.founder_name, now));
   }
   statements.push(env.DB.prepare(
     `INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, message, related_entity_id, created_at)
@@ -2554,12 +2617,53 @@ export async function notificationsBulk(
   return noContent();
 }
 
+// The mobile client uses this endpoint only for legacy/offline-compatible
+// audit events that do not already have a dedicated Worker mutation route.
+// Keep the vocabulary closed so a Coach/Trainee cannot manufacture an
+// arbitrary privileged-looking audit record.
+export const CLIENT_AUDIT_ACTIONS = new Set([
+  "ActivateUser", "AdminApproveFounder", "AdminCreateFounder", "AdminDeleteFounder",
+  "AdminResetFounderPassword", "ApproveCoachCheckIn", "ApproveTraineeEvaluation",
+  "BindExternalAccount", "ChangePassword", "CoachCheckIn", "CoachCheckOut",
+  "ConfirmTuition", "ConfirmTuitionByFounder", "CreateTraineeEvaluation", "UpdateTraineeEvaluation", "CreateUser",
+  "DeleteClass", "OfflineEmailPasswordReset", "OpenTraineeEvaluationRequest",
+  "RejectTuitionProof", "ResetPassword", "SaveClass", "SaveVenue", "SendAnnouncement",
+  "SetClassActive", "SetVenueActive", "SubmitAttendance", "SubmitPaymentProof",
+  "UnbindExternalAccount", "UpdateClub", "UpdatePaidSalaryNotes", "UpdateProfile",
+  "UpdateTuitionPrepaidCycles", "UpdateTuitionPrepaidCyclesByFounder", "UpdateTuitionSupport",
+]);
+
+export const CLIENT_AUDIT_ENTITY_TYPES = new Set([
+  "AppNotification", "ClubProfile", "CoachCheckIn", "CoachSalary", "ExternalAccountLink",
+  "PersonProfile", "TrainingClass", "TrainingSession", "TraineeEvaluation", "TuitionInvoice",
+  "UserAccount", "Venue",
+]);
+
+const CLIENT_AUDIT_ACTIONS_BY_ROLE: Record<string, ReadonlySet<string>> = {
+  trainee: new Set(["ChangePassword", "UpdateProfile", "SubmitPaymentProof", "CreateTraineeEvaluation", "UpdateTraineeEvaluation"]),
+  coach: new Set(["ChangePassword", "UpdateProfile", "CoachCheckIn", "CoachCheckOut", "SubmitAttendance", "CreateTraineeEvaluation", "UpdateTraineeEvaluation"]),
+  manager: new Set(["ChangePassword", "UpdateProfile", "CoachCheckIn", "CoachCheckOut", "SubmitAttendance", "ApproveCoachCheckIn", "ApproveTraineeEvaluation", "CreateTraineeEvaluation", "UpdateTraineeEvaluation", "SubmitPaymentProof"]),
+};
+
 export async function auditEvent(request: Request, env: Env): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
   const body = await readJson<JsonObject>(request);
-  await audit(env, tenantId, auth.id, requireText(body.action, "action", 100),
-    requireText(body.entityType, "entityType", 80), requireText(body.entityId, "entityId", 80),
+  const action = requireText(body.action, "action", 100);
+  const entityType = requireText(body.entityType, "entityType", 80);
+  const entityId = requireText(body.entityId, "entityId", 80);
+  if (!CLIENT_AUDIT_ACTIONS.has(action) || !CLIENT_AUDIT_ENTITY_TYPES.has(entityType)) {
+    throw new ApiError(403, "audit_action_not_allowed", "Thao tác audit không được phép.");
+  }
+  const roleActions = CLIENT_AUDIT_ACTIONS_BY_ROLE[auth.role];
+  if (roleActions && !roleActions.has(action)) {
+    throw new ApiError(403, "audit_action_not_allowed", "Role hiện tại không được ghi loại audit này.");
+  }
+  if ((action === "ChangePassword" || action === "UpdateProfile") && entityId !== auth.id
+      && !isFounderLike(auth.role)) {
+    throw new ApiError(403, "audit_action_not_allowed", "Chỉ được ghi audit cho hồ sơ của chính mình.");
+  }
+  await audit(env, tenantId, auth.id, action, entityType, entityId,
     optionalText(body.details, "details", 1000));
   return noContent();
 }
@@ -2639,36 +2743,69 @@ export async function snapshot(request: Request, env: Env): Promise<Response> {
   }
   const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
   if (idempotencyKey.length > 120) throw new ApiError(400, "validation_error", "Idempotency-Key quá dài.");
+  let idempotencyReserved = false;
   if (idempotencyKey) {
+    const now = nowIso();
     const cached = await env.DB.prepare(
       "SELECT response_status, response_json FROM idempotency_keys WHERE user_id=? AND idempotency_key=? AND expires_at>?",
-    ).bind(auth.id, idempotencyKey, nowIso()).first<{ response_status: number; response_json: string }>();
-    if (cached) return json(JSON.parse(cached.response_json) as unknown, cached.response_status);
-  }
-  const body = await readJson<JsonObject>(request, 5_242_880);
-  const changes = body.changes && typeof body.changes === "object" && !Array.isArray(body.changes)
-    ? body.changes as JsonObject
-    : body;
-  const result = await applySnapshot(env, auth, changes);
-  const deviceId = optionalText(body.deviceId, "deviceId", 120);
-  const clientMutationId = optionalText(body.clientMutationId, "clientMutationId", 120);
-  const statements: D1PreparedStatement[] = [];
-  if (deviceId) {
-    statements.push(env.DB.prepare(
-      `INSERT INTO sync_cursors (user_id, device_id, tenant_id, last_client_mutation_id, last_sync_at)
-       VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, device_id) DO UPDATE SET
-       tenant_id=excluded.tenant_id, last_client_mutation_id=excluded.last_client_mutation_id,
-       last_sync_at=excluded.last_sync_at`,
-    ).bind(auth.id, deviceId, auth.tenantId, clientMutationId, nowIso()));
-  }
-  if (idempotencyKey) {
-    statements.push(env.DB.prepare(
-      `INSERT OR REPLACE INTO idempotency_keys
+    ).bind(auth.id, idempotencyKey, now).first<{ response_status: number; response_json: string }>();
+    if (cached) {
+      if (Number(cached.response_status) === 425) {
+        throw new ApiError(409, "mutation_in_progress", "Yêu cầu trước đang được xử lý. Vui lòng thử lại sau ít giây.");
+      }
+      return json(JSON.parse(cached.response_json) as unknown, cached.response_status);
+    }
+    const reservation = await env.DB.prepare(
+      `INSERT OR IGNORE INTO idempotency_keys
        (user_id, idempotency_key, tenant_id, response_status, response_json, created_at, expires_at)
-       VALUES (?, ?, ?, 200, ?, ?, ?)`,
-    ).bind(auth.id, idempotencyKey, auth.tenantId, JSON.stringify(result), nowIso(),
-      new Date(Date.now() + 24 * 60 * 60_000).toISOString()));
+       VALUES (?, ?, ?, 425, '{"pending":true}', ?, ?)`,
+    ).bind(auth.id, idempotencyKey, auth.tenantId, now,
+      new Date(Date.now() + 5 * 60_000).toISOString()).run();
+    if (!reservation.meta.changes) {
+      const concurrent = await env.DB.prepare(
+        "SELECT response_status, response_json FROM idempotency_keys WHERE user_id=? AND idempotency_key=? AND expires_at>?",
+      ).bind(auth.id, idempotencyKey, nowIso()).first<{ response_status: number; response_json: string }>();
+      if (concurrent && Number(concurrent.response_status) === 425) {
+        throw new ApiError(409, "mutation_in_progress", "Yêu cầu trước đang được xử lý. Vui lòng thử lại sau ít giây.");
+      }
+      if (concurrent) return json(JSON.parse(concurrent.response_json) as unknown, concurrent.response_status);
+      throw new ApiError(409, "idempotency_conflict", "Không thể giữ khóa idempotency cho yêu cầu này.");
+    }
+    idempotencyReserved = true;
   }
-  if (statements.length) await env.DB.batch(statements);
-  return json(result);
+  try {
+    const body = await readJson<JsonObject>(request, 5_242_880);
+    const changes = body.changes && typeof body.changes === "object" && !Array.isArray(body.changes)
+      ? body.changes as JsonObject
+      : body;
+    const result = await applySnapshot(env, auth, changes);
+    const deviceId = optionalText(body.deviceId, "deviceId", 120);
+    const clientMutationId = optionalText(body.clientMutationId, "clientMutationId", 120);
+    const statements: D1PreparedStatement[] = [];
+    if (deviceId) {
+      statements.push(env.DB.prepare(
+        `INSERT INTO sync_cursors (user_id, device_id, tenant_id, last_client_mutation_id, last_sync_at)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, device_id) DO UPDATE SET
+         tenant_id=excluded.tenant_id, last_client_mutation_id=excluded.last_client_mutation_id,
+         last_sync_at=excluded.last_sync_at`,
+      ).bind(auth.id, deviceId, auth.tenantId, clientMutationId, nowIso()));
+    }
+    if (idempotencyKey) {
+      statements.push(env.DB.prepare(
+        `UPDATE idempotency_keys
+            SET response_status=200, response_json=?, created_at=?, expires_at=?
+          WHERE user_id=? AND idempotency_key=? AND response_status=425`,
+      ).bind(JSON.stringify(result), nowIso(), new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+        auth.id, idempotencyKey));
+    }
+    if (statements.length) await env.DB.batch(statements);
+    return json(result);
+  } catch (error) {
+    if (idempotencyReserved) {
+      await env.DB.prepare(
+        "DELETE FROM idempotency_keys WHERE user_id=? AND idempotency_key=? AND response_status=425",
+      ).bind(auth.id, idempotencyKey).run().catch(() => undefined);
+    }
+    throw error;
+  }
 }

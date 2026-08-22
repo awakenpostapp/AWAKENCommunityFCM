@@ -41,6 +41,15 @@ export function canCreateClass(role: UserRole): boolean {
   return isFounderLike(role) || role === "manager";
 }
 
+/**
+ * Tenant members may inspect classes they belong to or manage.  Keep this
+ * read capability separate from attendance-write capability so Managers can
+ * operate on class administration without submitting attendance.
+ */
+export function canReadClass(role: UserRole): boolean {
+  return (TENANT_MEMBER_ROLES as readonly UserRole[]).includes(role);
+}
+
 export function canApproveOperations(role: UserRole): boolean {
   return isFounderLike(role) || role === "manager";
 }

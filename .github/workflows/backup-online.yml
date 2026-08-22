@@ -1,0 +1,71 @@
+name: Online database backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Export Supabase PostgreSQL, D1 and R2 inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "SUPABASE_DB_URL secret is required for the online backup." >&2
+            exit 1
+          fi
+          backup_dir="../backups/ci/${GITHUB_RUN_ID}"
+          mkdir -p "$backup_dir"
+
+          pg_dump "$SUPABASE_DB_URL" --format=custom --no-owner --no-privileges \
+            --file="$backup_dir/supabase-${GITHUB_RUN_ID}.dump"
+          pg_dump "$SUPABASE_DB_URL" --schema-only --no-owner --no-privileges \
+            --file="$backup_dir/supabase-${GITHUB_RUN_ID}-schema.sql"
+
+          npx wrangler d1 export community-football-club-manager --remote \
+            --output "$backup_dir/d1-${GITHUB_RUN_ID}.sql"
+          npx wrangler r2 object list community-football-club-manager-files --remote --json \
+            > "$backup_dir/r2-${GITHUB_RUN_ID}-inventory.json"
+
+          cat > "$backup_dir/manifest.json" <<EOF
+          {
+            "createdAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "gitSha": "${GITHUB_SHA}",
+            "supabaseProject": "yjapwstfawfdjxutczmd",
+            "supabaseRegion": "ap-southeast-1",
+            "d1Database": "community-football-club-manager",
+            "r2Bucket": "community-football-club-manager-files",
+            "note": "R2 inventory is included; object bytes remain in the production bucket unless a separate R2 replication policy is configured."
+          }
+          EOF
+          sha256sum "$backup_dir"/* > "$backup_dir/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: online-backup-${{ github.run_id }}
+          path: backups/ci/${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 90
