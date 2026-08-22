@@ -247,6 +247,7 @@ public static class CloudSnapshotMapper
             Id = Text(source.Id),
             TenantId = RequiredTenant(tenantId),
             VenueId = Text(source.VenueId),
+            ManagerUserId = Text(source.ManagerUserId),
             Name = Text(source.Name),
             ScheduleDays = Text(source.ScheduleDays),
             StartDate = DateOnly.FromDateTime(source.StartDate.Date),
@@ -268,6 +269,7 @@ public static class CloudSnapshotMapper
         {
             Id = Text(source.Id),
             VenueId = Text(source.VenueId),
+            ManagerUserId = Text(source.ManagerUserId),
             Name = Text(source.Name),
             ScheduleDays = Text(source.ScheduleDays),
             StartDate = source.StartDate == default

@@ -38,7 +38,7 @@ export function canCreateMember(
 }
 
 export function canCreateClass(role: UserRole): boolean {
-  return isFounderLike(role) || role === "manager";
+  return isFounderLike(role);
 }
 
 /**

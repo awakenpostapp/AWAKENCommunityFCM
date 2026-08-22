@@ -142,6 +142,9 @@ public sealed class TrainingClass
     [Indexed, MaxLength(32)]
     public string VenueId { get; set; } = string.Empty;
 
+    [Indexed, MaxLength(32)]
+    public string ManagerUserId { get; set; } = string.Empty;
+
     public string ScheduleDays { get; set; } = string.Empty;
     /// <summary>First date from which the recurring class schedule is visible.</summary>
     public DateTime StartDate { get; set; } = DateTime.Today;

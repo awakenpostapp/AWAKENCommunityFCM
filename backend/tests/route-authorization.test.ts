@@ -7,6 +7,7 @@ import {
   assertCanCreateClass,
   assertCanCreateMember,
 } from "../src/route-authorization.ts";
+import { validateClassCreationPayload } from "../src/class-validation.ts";
 
 function isForbidden(error: unknown): boolean {
   const candidate = error as { status?: number; code?: string };
@@ -23,8 +24,13 @@ test("member creation route follows the role matrix", () => {
   });
 });
 
-test("class creation and approvals allow Manager but not unrelated roles", () => {
-  assert.doesNotThrow(() => assertCanCreateClass("manager"));
+test("class creation is Founder-like only while approvals allow Manager", () => {
+  assert.throws(() => assertCanCreateClass("manager"), (error: unknown) => {
+    const candidate = error as { status?: number; code?: string };
+    return candidate.status === 403 && candidate.code === "forbidden_class_create";
+  });
+  assert.doesNotThrow(() => assertCanCreateClass("founder"));
+  assert.doesNotThrow(() => assertCanCreateClass("co_founder"));
   assert.doesNotThrow(() => assertCanApproveOperations("manager"));
   assert.doesNotThrow(() => assertCanApproveOperations("co_founder"));
   assert.throws(() => assertCanCreateClass("coach"), isForbidden);
@@ -35,6 +41,17 @@ test("only Founder-like roles can manage account status/password", () => {
   assert.doesNotThrow(() => assertCanChangeAccountStatus("founder", "manager"));
   assert.doesNotThrow(() => assertCanChangeAccountStatus("co_founder", "co_founder"));
   assert.throws(() => assertCanChangeAccountStatus("manager", "coach"), isForbidden);
+});
+
+test("new class payload requires at least one Coach", () => {
+  assert.throws(() => validateClassCreationPayload({ coachUserIds: [] }), (error: unknown) => {
+    const candidate = error as { status?: number; code?: string };
+    return candidate.status === 400 && candidate.code === "coach_required";
+  });
+  assert.deepEqual(
+    validateClassCreationPayload({ coachUserIds: ["coach-1", "coach-1", "coach-2"] }),
+    ["coach-1", "coach-2"],
+  );
 });
 
 test("evaluation visibility includes co-founder management", async () => {

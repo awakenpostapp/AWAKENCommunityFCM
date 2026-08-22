@@ -77,6 +77,7 @@ public sealed class CloudTrainingClassSnapshot
     public string Id { get; init; } = string.Empty;
     public string TenantId { get; init; } = string.Empty;
     public string VenueId { get; init; } = string.Empty;
+    public string ManagerUserId { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string ScheduleDays { get; init; } = string.Empty;
     public DateOnly StartDate { get; init; } = DateOnly.MinValue;

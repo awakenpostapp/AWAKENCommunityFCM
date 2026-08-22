@@ -6,6 +6,7 @@ import {
 import { ApiError, optionalText, requireDateKey, requireInteger, requireText } from "./http";
 import { allRows, assertTenantEntity } from "./repository";
 import { isFounderLike } from "./authorization";
+import { validateClassCreationPayload } from "./class-validation";
 import {
   AUTO_ABSENT_REVIEW_NOTE,
   HISTORICAL_MANUAL_COACH_REVIEW_NOTE,
@@ -52,8 +53,8 @@ function safeUsers(rows: Row[]): Row[] {
 
 /**
  * Manager snapshots are operational projections, not a Founder directory.
- * Keep the current Manager plus Coach/Trainee identities needed to create
- * classes and review approvals; Co-Founder, Founder and Admin identities are
+ * Keep the current Manager plus Coach/Trainee identities needed to operate
+ * assigned classes and review approvals; Co-Founder, Founder and Admin identities are
  * intentionally excluded from the mobile cache.
  */
 function managerUsers(rows: Row[], currentUserId: string): Row[] {
@@ -103,7 +104,8 @@ function scopedMemberUsers(
     const role = String(row.role ?? "");
     const isOwn = id === currentUserId;
     const isOtherTrainee = role === "trainee" && !isOwn;
-    if (isOtherTrainee) {
+    const isOtherManager = role === "manager" && !isOwn;
+    if (isOtherTrainee || isOtherManager) {
       return {
         id: row.id,
         tenantId: row.tenantId,
@@ -153,8 +155,9 @@ function scopedMemberProfiles(
     const userId = String(row.userId ?? "");
     const role = roles.get(userId) ?? "";
     const isOtherTrainee = role === "trainee" && userId !== currentUserId;
+    const isOtherManager = role === "manager" && userId !== currentUserId;
     const isOwnProfile = userId === currentUserId;
-    if (isOtherTrainee || (viewerRole === "trainee" && isOwnProfile)) {
+    if (isOtherTrainee || isOtherManager || (viewerRole === "trainee" && isOwnProfile)) {
       return {
         userId,
         fullName: row.fullName ?? "",
@@ -1021,7 +1024,7 @@ export async function getSnapshot(
       JOIN training_sessions ts ON ts.id = ci.session_id
       WHERE ci.tenant_id = ? AND ci.coach_user_id = ? AND ci.checked_out_at IS NULL`;
     const memberScope = `SELECT u.id FROM users u WHERE u.tenant_id = ? AND (
-      u.id = ? OR u.role = 'founder' OR
+      u.id = ? OR u.role = 'founder' OR u.role = 'manager' OR
       (u.role = 'coach' AND EXISTS (
         SELECT 1 FROM class_coaches cc WHERE cc.coach_user_id = u.id AND cc.is_active = 1
           AND cc.class_id IN (${classScope})
@@ -1103,7 +1106,7 @@ export async function getSnapshot(
   const classScope = `SELECT class_id FROM class_enrollments
     WHERE tenant_id = ? AND trainee_user_id = ? AND is_active = 1`;
   const memberScope = `SELECT u.id FROM users u WHERE u.tenant_id = ? AND (
-    u.role = 'founder' OR u.id = ? OR
+    u.role = 'founder' OR u.role = 'manager' OR u.id = ? OR
     (u.role = 'trainee' AND EXISTS (SELECT 1 FROM class_enrollments ce
       WHERE ce.trainee_user_id = u.id AND ce.is_active = 1 AND ce.class_id IN (${classScope}))) OR
     (u.role = 'coach' AND EXISTS (SELECT 1 FROM class_coaches cc
@@ -1285,6 +1288,7 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
   const incomingClassIds = new Set(classRows.map((row) => String(row.id)));
   const incomingSessionIds = new Set(sessionRows.map((row) => String(row.id)));
   const incomingEnrollmentById = new Map(enrollmentRows.map((row) => [String(row.id), row]));
+  const resolvedClassManagerIds = new Map<string, string | null>();
 
   if (auth.role === "manager") {
     const unsupported = [
@@ -1295,17 +1299,43 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
     ].filter(([, rows]) => (rows as Row[]).length > 0).map(([key]) => key);
     if (body.activeClub !== undefined || body.club !== undefined) unsupported.push("club");
     if (unsupported.length > 0) {
-      throw new ApiError(403, "forbidden_manager_sync", "Manager chỉ được tạo lớp mới qua snapshot.", { collections: unsupported });
+      throw new ApiError(403, "forbidden_manager_sync", "Manager chỉ được thực hiện các nghiệp vụ được phân quyền.", { collections: unsupported });
     }
-    const existingClasses = await Promise.all(classRows.map((item) => env.DB.prepare(
-      "SELECT id FROM classes WHERE id=? AND tenant_id=? LIMIT 1",
-    ).bind(String(item.id), tenantId).first()));
-    if (existingClasses.some(Boolean)) {
-      throw new ApiError(403, "forbidden_manager_class_edit", "Manager chỉ được tạo lớp mới, không được sửa lớp đã có.");
+    if (classRows.length > 0 || classCoachRows.length > 0 || enrollmentRows.length > 0) {
+      throw new ApiError(403, "forbidden_manager_class_write", "Manager không được tạo hoặc chỉnh sửa cấu trúc lớp học.");
     }
-    if (classCoachRows.some((item) => !incomingClassIds.has(String(item.classId)))
-      || enrollmentRows.some((item) => !incomingClassIds.has(String(item.classId)))) {
-      throw new ApiError(403, "forbidden_manager_class_assignment", "Manager chỉ được thêm thành viên khi tạo lớp mới.");
+  }
+
+  if (isFounderLike(auth.role)) {
+    for (const item of classRows) {
+      const classId = idOf(item);
+      const existingClass = await env.DB.prepare(
+        "SELECT id, manager_user_id FROM classes WHERE id=? AND tenant_id=? LIMIT 1",
+      ).bind(classId, tenantId).first<{ id: string; manager_user_id: string | null }>();
+      // Keep an existing Manager assignment when an older client sends a
+      // snapshot without the newly-added field. Explicit null/empty still
+      // means Founder intentionally removed the assignment.
+      const managerUserId = item.managerUserId === undefined
+        ? (existingClass?.manager_user_id ?? null)
+        : item.managerUserId === null || item.managerUserId === ""
+          ? null
+          : requireText(item.managerUserId, "class.managerUserId", 64);
+      resolvedClassManagerIds.set(classId, managerUserId);
+      if (managerUserId) {
+        const manager = await env.DB.prepare(
+          "SELECT id FROM users WHERE id=? AND tenant_id=? AND role='manager' AND is_active=1 LIMIT 1",
+        ).bind(managerUserId, tenantId).first();
+        if (!manager) {
+          throw new ApiError(400, "invalid_manager", "Manager phải là account đang hoạt động trong đội.");
+        }
+      }
+      if (!existingClass) {
+        validateClassCreationPayload({
+          coachUserIds: classCoachRows
+            .filter((coach) => String(coach.classId) === classId && coach.isActive !== false)
+            .map((coach) => coach.coachUserId),
+        });
+      }
     }
   }
 
@@ -1457,16 +1487,22 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
       const venueId = item.venueId ? requireText(item.venueId, "class.venueId", 64) : null;
       if (venueId) await assertTenantOrIncoming(env, "venues", venueId, tenantId, incomingVenueIds);
       statements.push(env.DB.prepare(
-        `INSERT INTO classes (id, tenant_id, venue_id, name, schedule_days, start_date, start_time_minutes, end_time_minutes,
+        `INSERT INTO classes (id, tenant_id, venue_id, manager_user_id, name, schedule_days, start_date, start_time_minutes, end_time_minutes,
           tuition_session_count, default_cycle_fee_vnd, evaluation_request_open, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET venue_id=excluded.venue_id, name=excluded.name, schedule_days=excluded.schedule_days,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET venue_id=excluded.venue_id, manager_user_id=excluded.manager_user_id, name=excluded.name, schedule_days=excluded.schedule_days,
           start_date=excluded.start_date,
           start_time_minutes=excluded.start_time_minutes, end_time_minutes=excluded.end_time_minutes,
           tuition_session_count=excluded.tuition_session_count, default_cycle_fee_vnd=excluded.default_cycle_fee_vnd,
           evaluation_request_open=excluded.evaluation_request_open,
           is_active=excluded.is_active, updated_at=excluded.updated_at WHERE classes.tenant_id=excluded.tenant_id`,
-      ).bind(id, tenantId, venueId, requireText(item.name, "class.name", 180), optionalText(item.scheduleDays, "scheduleDays", 50),
+      ).bind(id, tenantId, venueId,
+        // `resolvedClassManagerIds` keeps an existing assignment when a
+        // legacy client omits the field during a partial snapshot update.
+        resolvedClassManagerIds.get(id)
+          ?? (item.managerUserId === null || item.managerUserId === "" ? null :
+            item.managerUserId === undefined ? null : requireText(item.managerUserId, "class.managerUserId", 64)),
+        requireText(item.name, "class.name", 180), optionalText(item.scheduleDays, "scheduleDays", 50),
         item.startDate === undefined
           ? now.slice(0, 10)
           : requireDateKey(item.startDate, "class.startDate"),

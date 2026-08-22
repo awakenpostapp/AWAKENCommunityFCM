@@ -37,7 +37,7 @@ public static class RoleCapabilities
                 && targetRole is UserRole.Coach or UserRole.Trainee;
 
     public static bool CanCreateClasses(UserRole? role) =>
-        role is UserRole.Founder or UserRole.CoFounder or UserRole.Manager;
+        role is UserRole.Founder or UserRole.CoFounder;
 
     public static bool CanApproveOperations(UserRole? role) =>
         role is UserRole.Founder or UserRole.CoFounder or UserRole.Manager;

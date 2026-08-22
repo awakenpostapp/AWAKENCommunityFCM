@@ -37,3 +37,11 @@ test("class visibility allows management and assigned operational roles", () => 
   assert.equal(canReadClass("trainee"), true);
   assert.equal(canReadClass("admin"), false);
 });
+
+test("only Founder-like roles may create classes", async () => {
+  const { canCreateClass } = await import("../src/authorization.ts");
+  assert.equal(canCreateClass("founder"), true);
+  assert.equal(canCreateClass("co_founder"), true);
+  assert.equal(canCreateClass("manager"), false);
+  assert.equal(canCreateClass("coach"), false);
+});

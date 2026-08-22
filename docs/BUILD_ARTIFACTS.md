@@ -1,5 +1,13 @@
 # Android build artifacts
 
+## Release 3.4 — build 118 — 2026-08-22
+
+| File | Purpose | SHA-256 |
+|---|---|---|
+| `AWAKENCommunityFCM-v3.4-build118-Release.apk` | Signed online Release APK (published to GitHub Release) | `2FFD81F3BC7D366D106664B6BC6D66A9473CD88A4841AECE743B0463166D0841` |
+| `AWAKENCommunityFCM-v3.4-build118-Release.aab` | Signed Release Android App Bundle (local; not uploaded to GitHub) | `FB435A05ABB2CAE6F09D9914806BEBA2DF95E71876161E4354CE43A24065748D` |
+| `AWAKENCommunityFCM-v3.4-build118-Debug.apk` | Debug APK (local; not uploaded to GitHub) | `19EA7FB1363258836F24477CA324F5A95838E45A51BC285C339CFF5A2EC4996A` |
+
 ## Release 3.3 — build 114
 
 | File | Purpose | SHA-256 |

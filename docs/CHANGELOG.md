@@ -1,5 +1,21 @@
 # Change log
 
+## Release 3.4 — build 118 — 2026-08-22
+
+- Manager không còn quyền tạo hoặc chỉnh sửa cấu trúc lớp học; vẫn giữ các
+  nghiệp vụ quản lý được phân quyền trên lớp đã được gán.
+- Founder và Co-Founder có thể gán một Manager đang hoạt động vào lớp; thông
+  tin Manager được hiển thị trong thẻ và chi tiết lớp học, theo đúng tenant.
+- Khi tạo lớp học bắt buộc phải thêm ít nhất một Huấn Luyện Viên (Coach), với
+  kiểm tra đồng nhất ở Worker, snapshot sync và Android UI/database.
+- Thêm migration additive `manager_user_id` cho Cloudflare D1 và Supabase;
+  client cũ không làm mất assignment Manager khi đồng bộ thiếu trường mới.
+- Đã chạy pass các test authorization/management/schema, Supabase migration,
+  Worker typecheck/build/dry-run và Android build trước khi phát hành.
+- Build đủ Release APK, Release AAB và Debug APK; chỉ Release APK được upload
+  lên GitHub Release. Giữ nguyên ApplicationId, Cloudflare, Supabase, R2,
+  OAuth và dữ liệu hiện tại.
+
 ## Release 3.3 — build 117 — 2026-08-22
 
 - Phát hành bản build gồm toàn bộ hardening A → D → B → C: bảo vệ backend,

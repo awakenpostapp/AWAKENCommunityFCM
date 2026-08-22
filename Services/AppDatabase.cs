@@ -264,6 +264,13 @@ public sealed partial class AppDatabase
             }
 
             if (await Database.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM pragma_table_info('TrainingClasses') WHERE name = 'ManagerUserId'") == 0)
+            {
+                await Database.ExecuteAsync(
+                    "ALTER TABLE TrainingClasses ADD COLUMN ManagerUserId TEXT NOT NULL DEFAULT ''");
+            }
+
+            if (await Database.ExecuteScalarAsync<int>(
                     "SELECT COUNT(*) FROM pragma_table_info('UserAccounts') WHERE name = 'TenantId'") == 0)
             {
                 await Database.ExecuteAsync(
@@ -1060,11 +1067,15 @@ public sealed partial class AppDatabase
         var trainees = await Database.Table<ClassEnrollment>()
             .Where(item => item.IsActive)
             .ToListAsync();
+        var classes = await Database.Table<TrainingClass>().ToListAsync();
 
         result.UnionWith(coaches.Where(item => classIds.Contains(item.ClassId))
             .Select(item => item.CoachUserId));
         result.UnionWith(trainees.Where(item => classIds.Contains(item.ClassId))
             .Select(item => item.TraineeUserId));
+        result.UnionWith(classes.Where(item => classIds.Contains(item.Id)
+                                               && !string.IsNullOrWhiteSpace(item.ManagerUserId))
+            .Select(item => item.ManagerUserId));
         return result;
     }
 
@@ -1094,6 +1105,10 @@ public sealed partial class AppDatabase
         result.UnionWith(Online.ClassEnrollments
             .Where(item => item.IsActive && classIds.Contains(item.ClassId))
             .Select(item => item.TraineeUserId));
+        result.UnionWith(Online.Classes
+            .Where(item => classIds.Contains(item.Id)
+                           && !string.IsNullOrWhiteSpace(item.ManagerUserId))
+            .Select(item => item.ManagerUserId));
         return result;
     }
 
@@ -2588,11 +2603,17 @@ public sealed partial class AppDatabase
                         .Select(link => Online.User(link.TraineeUserId))
                         .Where(user => user is not null)
                         .Select(user => ToMember(Online, user!))
-                        .ToList()))
+                        .ToList(),
+                    string.IsNullOrWhiteSpace(item.ManagerUserId)
+                        ? null
+                        : Online.User(item.ManagerUserId) is { } manager
+                            ? ToMember(Online, manager)
+                            : null))
                 .ToList();
             await MaterializeMemberImagesAsync(
                 onlineActor.Id,
-                classRows.SelectMany(item => item.Coaches.Concat(item.Trainees)));
+                classRows.SelectMany(item => item.Coaches.Concat(item.Trainees).Append(item.Manager)
+                    .OfType<MemberRow>()));
             return classRows;
         }
 
@@ -2663,7 +2684,8 @@ public sealed partial class AppDatabase
                 enrollments.Where(link => link.ClassId == item.Id)
                     .Select(link => Member(link.TraineeUserId))
                     .OfType<MemberRow>()
-                    .ToList()))
+                    .ToList(),
+                Member(item.ManagerUserId)))
             .ToList();
     }
 
@@ -2672,7 +2694,8 @@ public sealed partial class AppDatabase
         TrainingClass trainingClass,
         IReadOnlyDictionary<string, long> coachRates,
         IReadOnlyDictionary<string, long> traineeFees,
-        IReadOnlyDictionary<string, int>? traineeTrialSessions = null)
+        IReadOnlyDictionary<string, int>? traineeTrialSessions = null,
+        string? managerUserId = null)
     {
         var trialSessions = traineeTrialSessions ?? new Dictionary<string, int>();
         if (IsOnline)
@@ -2691,6 +2714,23 @@ public sealed partial class AppDatabase
                 throw new InvalidOperationException("Vui lòng chọn ít nhất một ngày học.");
             if (trainingClass.EndTimeMinutes <= trainingClass.StartTimeMinutes)
                 throw new InvalidOperationException("Giờ kết thúc phải sau giờ bắt đầu.");
+
+            var existingOnlineClass = Online.Class(trainingClass.Id);
+            if (existingOnlineClass is null && coachRates.Count == 0)
+                throw new InvalidOperationException("Lớp học mới phải có ít nhất một Coach.");
+
+            var normalizedManagerId = managerUserId?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(normalizedManagerId))
+            {
+                var manager = Online.Users.FirstOrDefault(item =>
+                    item.Id == normalizedManagerId
+                    && item.TenantId == actor.TenantId
+                    && item.Role == UserRole.Manager
+                    && item.IsActive);
+                if (manager is null)
+                    throw new InvalidOperationException("Manager phải là account đang hoạt động trong đội.");
+            }
+            trainingClass.ManagerUserId = normalizedManagerId;
 
             var onlineTraineeAccounts = Online.Users
                 .Where(item => item.Role == UserRole.Trainee)
@@ -2807,6 +2847,28 @@ public sealed partial class AppDatabase
             throw new InvalidOperationException("Giờ kết thúc phải sau giờ bắt đầu.");
         }
 
+        var existing = await Database.FindAsync<TrainingClass>(trainingClass.Id);
+        if (existing is null && coachRates.Count == 0)
+        {
+            throw new InvalidOperationException("Lớp học mới phải có ít nhất một Coach.");
+        }
+
+        var normalizedOfflineManagerId = managerUserId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(normalizedOfflineManagerId))
+        {
+            var manager = await Database.Table<UserAccount>()
+                .Where(item => item.Id == normalizedOfflineManagerId
+                               && item.TenantId == offlineActor.TenantId
+                               && item.Role == UserRole.Manager
+                               && item.IsActive)
+                .FirstOrDefaultAsync();
+            if (manager is null)
+            {
+                throw new InvalidOperationException("Manager phải là account đang hoạt động trong đội.");
+            }
+        }
+        trainingClass.ManagerUserId = normalizedOfflineManagerId;
+
         var traineeAccounts = (await Database.Table<UserAccount>()
                 .Where(item => item.Role == UserRole.Trainee)
                 .ToListAsync())
@@ -2837,7 +2899,6 @@ public sealed partial class AppDatabase
 
         trainingClass.Name = trainingClass.Name.Trim();
         trainingClass.UpdatedAtUtc = DateTime.UtcNow;
-        var existing = await Database.FindAsync<TrainingClass>(trainingClass.Id);
         if (existing is null)
         {
             trainingClass.CreatedAtUtc = DateTime.UtcNow;

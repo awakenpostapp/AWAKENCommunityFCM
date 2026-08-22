@@ -53,6 +53,7 @@ import {
   assertCanDeleteTarget,
   assertCanEditMemberProfile,
 } from "./route-authorization";
+import { validateClassCreationPayload } from "./class-validation";
 import { CREATABLE_TENANT_USER_ROLES, isFounderLike } from "./authorization";
 import {
   AUTO_ABSENT_REVIEW_NOTE as STATE_AUTO_ABSENT_REVIEW_NOTE,
@@ -643,6 +644,29 @@ export async function classes(request: Request, env: Env): Promise<Response> {
   assertCanCreateClass(auth.role);
   const body = await readJson<JsonObject>(request);
   const id = newId();
+  const coachUserIds = validateClassCreationPayload({
+    coachUserIds: body.coachUserIds
+      ?? (body.coachUserId === undefined ? undefined : [body.coachUserId]),
+  });
+  for (const coachUserId of coachUserIds) {
+    const coach = await env.DB.prepare(
+      "SELECT id FROM users WHERE id=? AND tenant_id=? AND role='coach' AND is_active=1 LIMIT 1",
+    ).bind(coachUserId, tenantId).first();
+    if (!coach) {
+      throw new ApiError(400, "invalid_coach", "Coach phải là account đang hoạt động trong đội.");
+    }
+  }
+  const managerUserId = body.managerUserId === undefined || body.managerUserId === null
+    ? null
+    : requireText(body.managerUserId, "managerUserId", 64);
+  if (managerUserId) {
+    const manager = await env.DB.prepare(
+      "SELECT id FROM users WHERE id=? AND tenant_id=? AND role='manager' AND is_active=1 LIMIT 1",
+    ).bind(managerUserId, tenantId).first();
+    if (!manager) {
+      throw new ApiError(400, "invalid_manager", "Manager phải là account đang hoạt động trong đội.");
+    }
+  }
   const venueId = body.venueId ? requireText(body.venueId, "venueId", 64) : null;
   if (venueId) await assertTenantEntity(env, "venues", venueId, tenantId);
   const now = nowIso();
@@ -650,14 +674,20 @@ export async function classes(request: Request, env: Env): Promise<Response> {
     ? now.slice(0, 10)
     : requireDateKey(body.startDate, "startDate");
   await env.DB.prepare(
-    `INSERT INTO classes (id, tenant_id, venue_id, name, schedule_days, start_date, start_time_minutes, end_time_minutes,
+    `INSERT INTO classes (id, tenant_id, venue_id, manager_user_id, name, schedule_days, start_date, start_time_minutes, end_time_minutes,
      tuition_session_count, default_cycle_fee_vnd, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-  ).bind(id, tenantId, venueId, requireText(body.name, "name", 180), optionalText(body.scheduleDays, "scheduleDays", 50),
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+  ).bind(id, tenantId, venueId, managerUserId, requireText(body.name, "name", 180), optionalText(body.scheduleDays, "scheduleDays", 50),
     startDate,
     requireInteger(body.startTimeMinutes, "startTimeMinutes", 0, 1439), requireInteger(body.endTimeMinutes, "endTimeMinutes", 1, 1440),
     requireInteger(body.tuitionSessionCount, "tuitionSessionCount", 1, 100),
     requireInteger(body.defaultCycleFeeVnd, "defaultCycleFeeVnd", 0, 2_000_000_000), now, now).run();
+  const coachStatements = coachUserIds.map((coachUserId) => env.DB.prepare(
+    `INSERT INTO class_coaches (id, tenant_id, class_id, coach_user_id, salary_per_session_vnd, is_active, assigned_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?)`,
+  ).bind(newId(), tenantId, id, coachUserId,
+    requireInteger(body.salaryPerSessionVnd ?? 0, "salaryPerSessionVnd", 0, 2_000_000_000), now));
+  await env.DB.batch(coachStatements);
   return json({ id }, 201);
 }
 

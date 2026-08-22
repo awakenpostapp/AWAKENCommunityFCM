@@ -22,3 +22,16 @@ test("tenant user role validation fails closed", () => {
   assert.throws(() => validateTenantUserRole("founder"), /Role/);
   assert.throws(() => validateTenantUserRole("unknown"), /Role/);
 });
+
+test("class manager migration adds a tenant-safe nullable assignment", async () => {
+  const d1 = await readFile(new URL("../migrations/0015_class_manager.sql", import.meta.url), "utf8");
+  const supabase = await readFile(
+    new URL("../supabase/migrations/20260822120000_class_manager.sql", import.meta.url),
+    "utf8",
+  );
+  for (const source of [d1, supabase]) {
+    assert.match(source, /manager_user_id/iu);
+    assert.match(source, /references\s+(?:public\.)?users/iu);
+    assert.match(source, /index/iu);
+  }
+});

@@ -5,8 +5,8 @@ using CommunityFootballClubManager.Ui;
 namespace CommunityFootballClubManager.Views;
 
 /// <summary>
-/// Manager landing page.  It deliberately exposes only the operations granted
-/// to Manager: creating members/classes and opening the three approval flows.
+/// Manager landing page. It deliberately exposes only the operations granted
+/// to Manager: creating operational members and opening the approval/finance flows.
 /// The server remains the authority; these cards are only the navigation
 /// surface for the same guarded AppDatabase methods.
 /// </summary>
@@ -46,7 +46,7 @@ public sealed class ManagerDashboardPage : AsyncContentPage
             Children =
             {
                 UiKit.Headline("Quản lý vận hành"),
-                UiKit.Caption("Tạo mới thành viên/lớp học và xử lý các nghiệp vụ được phân công."),
+                UiKit.Caption("Tạo thành viên và xử lý các nghiệp vụ được phân công."),
                 UiKit.MetricGrid(
                     (classes.Count(item => item.Class.IsActive).ToString(), "Lớp đang hoạt động", UiKit.Primary),
                     (members.Count(item => item.Account.Role is UserRole.Coach or UserRole.Trainee).ToString(), "Thành viên", UiKit.Success),
@@ -60,11 +60,6 @@ public sealed class ManagerDashboardPage : AsyncContentPage
             "Tạo account mới trong đội.",
             UiKit.Primary,
             async () => await PushPageAsync(new MemberEditorPage(_database, Session, _media))));
-        root.Children.Add(ActionCard(
-            "Tạo lớp học",
-            "Tạo lớp, chọn lịch, Coach và học viên.",
-            UiKit.Primary,
-            async () => await PushPageAsync(new ClassEditorPage(_database, Session))));
         root.Children.Add(ActionCard(
             "Duyệt check-in / check-out Coach",
             pendingCheckouts.Count == 0

@@ -187,6 +187,10 @@ public sealed class ClassListPage : AsyncContentPage
             UiKit.Body($"Coach: {row.CoachNames}", UiKit.TextSecondary),
             UiKit.Body($"Sân: {row.Venue?.Name ?? "Chưa cập nhật"}", UiKit.TextSecondary)
         };
+        if (row.Manager is not null)
+        {
+            children.Add(UiKit.Body($"Manager: {row.ManagerName}", UiKit.TextSecondary));
+        }
         if (showInactiveStatus)
         {
             children.Add(UiKit.StatusBadge("Ngừng hoạt động", UiKit.TextSecondary));
@@ -274,17 +278,22 @@ public sealed class FounderFixedClassesPage : AsyncContentPage
 
     private View CreateClassCard(ClassRow row)
     {
-        var content = new VerticalStackLayout
+        var children = new List<View>
         {
-            Spacing = 5,
-            Children =
-            {
-                UiKit.Headline(row.Class.Name),
-                UiKit.Body(row.ScheduleText, UiKit.TextSecondary),
-                UiKit.Body($"Coach: {row.CoachNames}", UiKit.TextSecondary),
-                UiKit.Body($"Sân: {row.Venue?.Name ?? "Chưa cập nhật"}", UiKit.TextSecondary)
-            }
+            UiKit.Headline(row.Class.Name),
+            UiKit.Body(row.ScheduleText, UiKit.TextSecondary),
+            UiKit.Body($"Coach: {row.CoachNames}", UiKit.TextSecondary),
+            UiKit.Body($"Sân: {row.Venue?.Name ?? "Chưa cập nhật"}", UiKit.TextSecondary)
         };
+        if (row.Manager is not null)
+        {
+            children.Add(UiKit.Body($"Manager: {row.ManagerName}", UiKit.TextSecondary));
+        }
+        var content = new VerticalStackLayout { Spacing = 5 };
+        foreach (var child in children)
+        {
+            content.Children.Add(child);
+        }
         var card = UiKit.Card(content);
         var tap = new TapGestureRecognizer();
         tap.Tapped += async (_, _) => await Navigation.PushAsync(new ClassDetailsPage(
@@ -522,6 +531,10 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
                     substituted || taught ? UiKit.Success : UiKit.Danger)
             }
         };
+        if (_row.Manager is not null)
+        {
+            details.Children.Insert(4, UiKit.Body($"Manager: {_row.ManagerName}", UiKit.TextSecondary));
+        }
         root.Children.Add(UiKit.Card(details));
 
         root.Children.Add(UiKit.Title("Huấn luyện viên"));
@@ -725,6 +738,10 @@ public sealed class ClassDetailsPage : ContentPage
                 UiKit.Body($"Địa chỉ: {row.Venue?.Address ?? "Chưa cập nhật"}", UiKit.TextSecondary)
             }
         };
+        if (row.Manager is not null)
+        {
+            details.Children.Add(UiKit.Body($"Manager: {row.ManagerName}", UiKit.TextSecondary));
+        }
         if (RoleCapabilities.IsFounderLike(session.CurrentUser?.Role))
         {
             details.Children.Add(UiKit.StatusBadge(
@@ -1185,6 +1202,7 @@ public sealed class ClassEditorPage : ContentPage
     private readonly ClassRow? _existing;
     private readonly Entry _name = new() { Placeholder = "Ví dụ: U10 Cơ bản" };
     private readonly Picker _venue = new() { Title = "Chọn sân" };
+    private readonly Picker _manager = new() { Title = "Chọn Manager (không bắt buộc)" };
     private readonly DatePicker _startDate = new()
     {
         Date = DateTime.Today,
@@ -1254,8 +1272,15 @@ public sealed class ClassEditorPage : ContentPage
 
     private async Task BuildFormAsync()
     {
+        if (!RoleCapabilities.IsFounderLike(_session.CurrentUser?.Role))
+        {
+            throw new UnauthorizedAccessException(
+                "Chỉ Founder hoặc Co-Founder được tạo hoặc chỉnh sửa lớp học.");
+        }
+
         var founderId = CurrentFounderId;
         var venues = (await _database.GetVenuesAsync()).ToList();
+        var managers = (await _database.GetMembersAsync(founderId, UserRole.Manager)).ToList();
         var coaches = await _database.GetMembersAsync(founderId, UserRole.Coach);
         var trainees = await _database.GetMembersAsync(founderId, UserRole.Trainee);
         var assignments = _existing is null
@@ -1279,10 +1304,15 @@ public sealed class ClassEditorPage : ContentPage
 
         _venue.ItemsSource = venues;
         _venue.ItemDisplayBinding = new Binding(nameof(Venue.Name));
+        _manager.ItemsSource = managers;
+        _manager.ItemDisplayBinding = new Binding(nameof(MemberRow.DisplayName));
         if (_existing is not null)
         {
             _name.Text = _existing.Class.Name;
             _venue.SelectedItem = venues.FirstOrDefault(item => item.Id == _existing.Class.VenueId);
+            _manager.SelectedItem = managers.FirstOrDefault(item =>
+                item.Account.Id == _existing.Class.ManagerUserId
+                || item.Account.Id == _existing.Manager?.Account.Id);
             _startDate.Date = _existing.Class.StartDate.Date;
             _start.Time = TimeSpan.FromMinutes(_existing.Class.StartTimeMinutes);
             _end.Time = TimeSpan.FromMinutes(_existing.Class.EndTimeMinutes);
@@ -1293,6 +1323,10 @@ public sealed class ClassEditorPage : ContentPage
 
         _form.Children.Add(UiKit.LabeledField("TÊN LỚP", _name));
         _form.Children.Add(UiKit.LabeledField("SÂN", _venue));
+        _form.Children.Add(UiKit.LabeledField(
+            "MANAGER PHỤ TRÁCH",
+            _manager,
+            "Founder hoặc Co-Founder có thể gán một Manager cho lớp này."));
         _form.Children.Add(UiKit.Caption(
             venues.Count == 0
                 ? "Chưa có sân. Hãy tạo sân tại Khác > Quản lý sân trước khi tạo lớp."
@@ -1635,6 +1669,7 @@ public sealed class ClassEditorPage : ContentPage
             var trainingClass = _existing?.Class ?? new TrainingClass();
             trainingClass.Name = _name.Text ?? string.Empty;
             trainingClass.VenueId = selectedVenue.Id;
+            trainingClass.ManagerUserId = (_manager.SelectedItem as MemberRow)?.Account.Id ?? string.Empty;
             trainingClass.ScheduleDays = string.Join(",", selectedDays);
             trainingClass.StartDate = DateTime.SpecifyKind(
                 _startDate.Date.GetValueOrDefault().Date,
@@ -1650,6 +1685,11 @@ public sealed class ClassEditorPage : ContentPage
                 .ToDictionary(
                     pair => pair.Key,
                     pair => UiKit.ParseMoney(pair.Value.SalaryPerSession.Text));
+            if (coachRates.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Khi tạo lớp học phải thêm ít nhất một Huấn Luyện Viên (Coach).");
+            }
             if (coachRates.Any(pair => pair.Value <= 0))
             {
                 throw new InvalidOperationException(
@@ -1679,7 +1719,8 @@ public sealed class ClassEditorPage : ContentPage
                 trainingClass,
                 coachRates,
                 traineeFees,
-                traineeTrialSessions);
+                traineeTrialSessions,
+                trainingClass.ManagerUserId);
             await DisplayAlertAsync("Đã lưu", "Lớp học đã được cập nhật.", "OK");
             await Navigation.PopAsync();
         }

@@ -18,7 +18,8 @@ public sealed record ClassRow(
     TrainingClass Class,
     Venue? Venue,
     IReadOnlyList<MemberRow> Coaches,
-    IReadOnlyList<MemberRow> Trainees)
+    IReadOnlyList<MemberRow> Trainees,
+    MemberRow? Manager = null)
 {
     public string ScheduleText =>
         $"{DomainText.Weekdays(Class.ScheduleDays)} · {DomainText.TimeRange(Class.StartTimeMinutes, Class.EndTimeMinutes)}";
@@ -26,6 +27,7 @@ public sealed record ClassRow(
         ? "Chưa phân công Coach"
         : string.Join(", ", Coaches.Select(item =>
             $"{item.DisplayName} · {CoachPositionCatalog.Label(item.Profile.CoachPosition)}"));
+    public string ManagerName => Manager?.DisplayName ?? "Chưa phân công Manager";
 }
 
 public sealed class AttendanceRosterItem

@@ -1,5 +1,21 @@
 # Change log
 
+Release 3.4 - build 118 - 2026-08-22
+
+- Manager khong con quyen tao hoac chinh sua cau truc lop hoc; van giu cac
+  nghiep vu quan ly duoc phan quyen tren lop da duoc gan.
+- Founder va Co-Founder co the gan mot Manager dang hoat dong vao lop; thong
+  tin Manager duoc hien thi trong the va chi tiet lop hoc theo dung tenant.
+- Tao lop hoc bat buoc phai them it nhat mot Huan luyen vien (Coach), duoc
+  kiem tra dong nhat o Worker, snapshot sync va Android UI/database.
+- Them migration additive manager_user_id cho Cloudflare D1 va Supabase; client
+  cu khong lam mat assignment Manager khi dong bo thieu truong moi.
+- Da chay pass test authorization/management/schema, Supabase migration,
+  Worker typecheck/build/dry-run va Android build truoc khi phat hanh.
+- Build du Release APK, Release AAB va Debug APK; chi Release APK duoc upload
+  len GitHub Release. Giu nguyen ApplicationId, Cloudflare, Supabase, R2,
+  OAuth va du lieu hien tai.
+
 Release 3.3 - build 117 - 2026-08-22
 
 - Phat hanh build gom hardening A -> D -> B -> C: bao ve backend,
