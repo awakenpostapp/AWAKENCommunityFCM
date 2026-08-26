@@ -1,6 +1,6 @@
 # Supabase migration record
 
-Updated: 2026-08-18
+Updated: 2026-08-26
 
 ## Target
 
@@ -37,7 +37,7 @@ database stores its object keys, so no file path rewrite was performed.
 | D1 data INSERT statements | 578 |
 | Supabase tables | 30 |
 | Supabase imported rows | 578 |
-| Supabase migration | `20260818133227_cloudflare_legacy_schema` |
+| Supabase migration | `20260818133227_cloudflare_legacy_schema` + `class_manager_20260822` |
 | Supabase region | Singapore |
 
 The imported counts match the D1 export table-by-table. Empty operational
@@ -58,3 +58,13 @@ is revoked; the service role is the only role allowed to execute the adapter
 RPC. Supabase Auth exchange is available at
 `POST /v1/auth/supabase/exchange` and only linked active accounts can obtain a
 Worker session.
+
+## Production schema hotfix — 2026-08-26
+
+The class Manager assignment migration was present in the repository but had
+not yet been applied to the Supabase project. That caused every class snapshot
+write (including adding a trainee) to fail because the Worker always includes
+`classes.manager_user_id` in its upsert. The additive migration was applied
+successfully as `class_manager_20260822` (remote migration version
+`20260826165154`), and the matching Cloudflare D1 migration `0015_class_manager`
+was applied for rollback parity. Existing rows and tenant IDs were preserved.

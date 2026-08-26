@@ -1,5 +1,20 @@
 # Change log
 
+Production hotfix - 2026-08-26 (giu nguyen build 120)
+
+- Sua loi khong the luu khi sua lop hoac them Cau Thu Hoc Vien online: Supabase
+  production thieu cot classes.manager_user_id, khien RPC tra loi 400 va ung
+  dung hien thi “Khong the ghi du lieu online”.
+- Da ap dung migration additive class_manager_20260822 tren Supabase (cot
+  nullable va index tenant/lop) va migration 0015_class_manager.sql tren
+  Cloudflare D1; khong thay doi du lieu hien co.
+- Worker production da trien khai lai (version
+  6e0d6870-8c5b-4f7f-a2ac-a430231bf920). /health/supabase nay kiem tra truoc
+  cot bat buoc cho luong ghi lop de phat hien lech schema som.
+- Da kiem tra luu snapshot lop gom Coach va hoc vien tra HTTP 200; 42 test
+  backend, typecheck, build va dry-run Worker deu dat. Khong tang so build
+  Android vi thay doi chi o backend/schema.
+
 Release 3.4 - build 120 - 2026-08-26
 
 - Sua loi sau khi Founder xoa account thanh vien: danh sach thanh vien va cac

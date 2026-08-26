@@ -7,6 +7,7 @@ const bridge = await readFile(new URL("20260818140000_rls_auth_bridge.sql", migr
 const privateHelpers = await readFile(new URL("20260818142000_private_rls_helpers.sql", migrationDir), "utf8");
 const repair = await readFile(new URL("20260822100000_rls_helper_repair.sql", migrationDir), "utf8");
 const classManager = await readFile(new URL("20260822120000_class_manager.sql", migrationDir), "utf8");
+const supabaseHealth = await readFile(new URL("../src/supabase.ts", import.meta.url), "utf8");
 
 test("RLS migration never alters a missing helper and creates private helpers", () => {
   assert.doesNotMatch(privateHelpers, /ALTER\s+FUNCTION\s+public\.rls_auto_enable/iu);
@@ -34,4 +35,9 @@ test("class manager migration is additive and indexed", () => {
   assert.match(classManager, /add\s+column\s+if\s+not\s+exists\s+manager_user_id/iu);
   assert.match(classManager, /references\s+(?:public\.)?users/iu);
   assert.match(classManager, /create\s+index/iu);
+});
+
+test("Supabase health preflight validates the class-write schema", () => {
+  assert.match(supabaseHealth, /manager_user_id/iu);
+  assert.match(supabaseHealth, /SELECT\s+manager_user_id\s+FROM\s+classes/iu);
 });

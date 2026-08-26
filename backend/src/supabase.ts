@@ -41,6 +41,14 @@ export async function supabaseHealth(env: Env): Promise<Response> {
     if (!tableCheck || Number(tableCheck.count) < 0) {
       return json({ status: "degraded", backend: "supabase", code: "adapter_schema_invalid" }, 502);
     }
+    // Class writes include the optional Manager assignment. Keep this
+    // zero-row probe in the preflight so a missing additive migration is
+    // reported before it breaks the first class edit at runtime.
+    try {
+      await adapter.prepare("SELECT manager_user_id FROM classes LIMIT 0").all();
+    } catch {
+      return json({ status: "degraded", backend: "supabase", code: "adapter_schema_invalid" }, 502);
+    }
     return json({ status: "ok", backend: "supabase", adapter: "ok" });
   } catch {
     return json({ status: "degraded", backend: "supabase", code: "connection_failed" }, 502);

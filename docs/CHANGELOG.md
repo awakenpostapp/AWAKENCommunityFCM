@@ -1,5 +1,20 @@
 # Change log
 
+## Production hotfix — 2026-08-26 (build unchanged: 120)
+
+- Sửa lỗi không thể lưu khi sửa lớp hoặc thêm Cầu Thủ Học Viên online: Supabase
+  production còn thiếu cột `classes.manager_user_id`, khiến RPC trả lỗi 400 và
+  ứng dụng hiển thị “Không thể ghi dữ liệu online”.
+- Đã áp dụng migration additive `class_manager_20260822` trên Supabase
+  (cột nullable và index tenant/lớp) và migration `0015_class_manager.sql`
+  trên Cloudflare D1; không thay đổi dữ liệu hiện có.
+- Worker production đã triển khai lại (version
+  `6e0d6870-8c5b-4f7f-a2ac-a430231bf920`). `/health/supabase` nay kiểm tra
+  trước cột bắt buộc cho luồng ghi lớp để phát hiện lệch schema sớm.
+- Đã kiểm tra lưu snapshot lớp gồm Coach và học viên trả HTTP 200; toàn bộ 42
+  test backend, typecheck, build và dry-run Worker đều đạt. Không tăng số build
+  Android vì thay đổi chỉ ở backend/schema.
+
 ## Release 3.4 — build 120 — 2026-08-26
 
 - Sửa lỗi sau khi Founder xóa account thành viên: danh sách thành viên và các
