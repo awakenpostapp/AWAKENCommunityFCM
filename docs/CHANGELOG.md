@@ -1,5 +1,20 @@
 # Change log
 
+## Release 3.4 — build 119 — 2026-08-26
+
+- Founder có nút **Xóa account vĩnh viễn** trong hồ sơ thành viên và màn hình
+  sửa hồ sơ; thao tác yêu cầu xác nhận lại trước khi thực hiện.
+- Worker bổ sung `DELETE /v1/users/:id`, kiểm tra tenant và ma trận quyền:
+  Founder được xóa Coach, Trainee, Manager và Co-Founder; Co-Founder không
+  được xóa Co-Founder khác; Manager và các account khác không được xóa.
+- Xóa account dọn dữ liệu liên quan của thành viên (phân công lớp, điểm danh,
+  học phí, bill, hóa đơn, lương, đánh giá, thông báo, liên kết OAuth và media),
+  xử lý attendance có ràng buộc RESTRICT, xóa object R2 và ghi audit.
+- Giữ nguyên ApplicationId, database, Cloudflare, Supabase, R2, OAuth và
+  version hiển thị 3.4; chỉ tăng số build từ 118 lên 119.
+- Build đủ Release APK, Release AAB và Debug APK; chỉ Release APK được đưa
+  lên GitHub Release.
+
 ## Release 3.4 — build 118 — 2026-08-22
 
 - Manager không còn quyền tạo hoặc chỉnh sửa cấu trúc lớp học; vẫn giữ các

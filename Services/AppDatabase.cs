@@ -1863,6 +1863,146 @@ public sealed partial class AppDatabase
             target.Username);
     }
 
+    /// <summary>
+    /// Permanently removes a Coach, Trainee, Manager or permitted Co-Founder
+    /// from the current Founder tenant. The Worker performs the authoritative
+    /// cascade online; the local path keeps the legacy SQLite database safe by
+    /// removing the one RESTRICT attendance relationship before the account.
+    /// </summary>
+    public async Task DeleteMemberAccountAsync(string actorUserId, string targetUserId)
+    {
+        if (IsOnline)
+        {
+            var onlineActor = await RequireOnlineUserAsync(actorUserId);
+            if (!RoleCapabilities.IsFounderLike(onlineActor.Role))
+                throw new UnauthorizedAccessException("Chỉ Founder hoặc Co-Founder được xóa account.");
+            await EnsureOnlineSnapshotAsync();
+            var onlineTarget = Online.User(targetUserId)
+                               ?? throw new InvalidOperationException("Không tìm thấy account thành viên.");
+            if (!RoleCapabilities.CanDeleteTarget(onlineActor.Role, onlineTarget.Role))
+                throw new UnauthorizedAccessException("Role hiện tại không được xóa account này.");
+            if (onlineTarget.Id == onlineActor.Id)
+                throw new InvalidOperationException("Không thể tự xóa account đang đăng nhập.");
+
+            try
+            {
+                await _cloudApi.DeleteMemberAsync(targetUserId);
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
+
+            var sessionIds = Online.TrainingSessions
+                .Where(item => string.Equals(item.SubmittedByUserId, targetUserId, StringComparison.Ordinal))
+                .Select(item => item.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var invoiceIds = Online.TuitionInvoices
+                .Where(item => string.Equals(item.TraineeUserId, targetUserId, StringComparison.Ordinal))
+                .Select(item => item.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var item in Online.Classes.Where(item => item.ManagerUserId == targetUserId))
+            {
+                item.ManagerUserId = string.Empty;
+            }
+            foreach (var item in Online.TrainingSessions.Where(item => sessionIds.Contains(item.Id)))
+            {
+                item.SubmittedByUserId = string.Empty;
+            }
+            foreach (var item in Online.CoachCheckIns.Where(item => item.ReviewedByUserId == targetUserId))
+            {
+                item.ReviewedByUserId = string.Empty;
+            }
+            foreach (var item in Online.CoachSalaries.Where(item => item.PaidByUserId == targetUserId))
+            {
+                item.PaidByUserId = string.Empty;
+            }
+            foreach (var item in Online.TraineeEvaluations.Where(item => item.ReviewedByUserId == targetUserId))
+            {
+                item.ReviewedByUserId = string.Empty;
+            }
+            Online.Remove(Online.Users, item => item.Id == targetUserId);
+            Online.Remove(Online.Profiles, item => item.UserId == targetUserId);
+            Online.Remove(Online.ClassCoaches, item => item.CoachUserId == targetUserId);
+            Online.Remove(Online.ClassEnrollments, item => item.TraineeUserId == targetUserId);
+            Online.Remove(Online.SessionCoaches, item => item.CoachUserId == targetUserId);
+            Online.Remove(Online.CoachCheckIns, item => item.CoachUserId == targetUserId);
+            Online.Remove(Online.AttendanceRecords, item => item.TraineeUserId == targetUserId
+                                                              || item.RecordedByUserId == targetUserId);
+            Online.Remove(Online.TuitionInvoices, item => item.TraineeUserId == targetUserId);
+            Online.Remove(Online.PaymentProofs, item => invoiceIds.Contains(item.InvoiceId));
+            Online.Remove(Online.Receipts, item => invoiceIds.Contains(item.InvoiceId));
+            Online.Remove(Online.CoachSalaries, item => item.CoachUserId == targetUserId);
+            Online.Remove(Online.TraineeEvaluations, item => item.TraineeUserId == targetUserId
+                                                              || item.CoachUserId == targetUserId);
+            Online.Remove(Online.Notifications, item => item.RecipientUserId == targetUserId);
+            Online.Remove(Online.AuditLogs, item => item.ActorUserId == targetUserId);
+            Online.InvalidateData();
+            return;
+        }
+
+        await InitializeAsync();
+        var actor = await RequireUserAsync(actorUserId);
+        if (!RoleCapabilities.IsFounderLike(actor.Role))
+            throw new UnauthorizedAccessException("Chỉ Founder hoặc Co-Founder được xóa account.");
+        var target = await Database.FindAsync<UserAccount>(targetUserId)
+                     ?? throw new InvalidOperationException("Không tìm thấy account thành viên.");
+        if (!RoleCapabilities.CanDeleteTarget(actor.Role, target.Role))
+            throw new UnauthorizedAccessException("Role hiện tại không được xóa account này.");
+        if (target.Id == actor.Id)
+            throw new InvalidOperationException("Không thể tự xóa account đang đăng nhập.");
+
+        if (IsCloudBackedAccount(actor) || await HasCloudSessionForAsync(actorUserId))
+        {
+            try
+            {
+                await _cloudApi.DeleteMemberAsync(targetUserId);
+                await DeleteLocalMemberRowsAsync(target);
+                return;
+            }
+            catch (ApiException exception)
+            {
+                throw CloudOperationException(exception);
+            }
+        }
+
+        await DeleteLocalMemberRowsAsync(target);
+        await AddAuditAsync(actorUserId, "DeleteMember", nameof(UserAccount), target.Id, target.Username);
+    }
+
+    private async Task DeleteLocalMemberRowsAsync(UserAccount target)
+    {
+        await Database.RunInTransactionAsync(connection =>
+        {
+            // Attendance records retain a RESTRICT-style relationship to the
+            // recorder in the online schema; delete both owned and recorded
+            // rows before deleting the account.
+            connection.Execute(
+                "DELETE FROM AttendanceRecords WHERE TraineeUserId = ? OR RecordedByUserId = ?",
+                target.Id,
+                target.Id);
+            connection.Execute("DELETE FROM PaymentProofs WHERE InvoiceId IN (SELECT Id FROM TuitionInvoices WHERE TraineeUserId = ?)", target.Id);
+            connection.Execute("DELETE FROM Receipts WHERE InvoiceId IN (SELECT Id FROM TuitionInvoices WHERE TraineeUserId = ?)", target.Id);
+            connection.Execute("DELETE FROM TuitionInvoices WHERE TraineeUserId = ?", target.Id);
+            connection.Execute("DELETE FROM CoachCheckIns WHERE CoachUserId = ?", target.Id);
+            connection.Execute("DELETE FROM SessionCoachAssignments WHERE CoachUserId = ?", target.Id);
+            connection.Execute("DELETE FROM ClassCoachAssignments WHERE CoachUserId = ?", target.Id);
+            connection.Execute("DELETE FROM ClassEnrollments WHERE TraineeUserId = ?", target.Id);
+            connection.Execute("UPDATE TrainingSessions SET SubmittedByUserId = '' WHERE SubmittedByUserId = ?", target.Id);
+            connection.Execute("UPDATE TrainingClasses SET ManagerUserId = '' WHERE ManagerUserId = ?", target.Id);
+            connection.Execute("UPDATE CoachCheckIns SET ReviewedByUserId = '' WHERE ReviewedByUserId = ?", target.Id);
+            connection.Execute("DELETE FROM CoachSalaries WHERE CoachUserId = ?", target.Id);
+            connection.Execute("UPDATE CoachSalaries SET PaidByUserId = '' WHERE PaidByUserId = ?", target.Id);
+            connection.Execute("DELETE FROM TraineeEvaluations WHERE TraineeUserId = ? OR CoachUserId = ?", target.Id, target.Id);
+            connection.Execute("UPDATE TraineeEvaluations SET ReviewedByUserId = '' WHERE ReviewedByUserId = ?", target.Id);
+            connection.Execute("DELETE FROM AppNotifications WHERE RecipientUserId = ?", target.Id);
+            connection.Execute("DELETE FROM ExternalAccountLinks WHERE UserId = ?", target.Id);
+            connection.Execute("DELETE FROM PersonProfiles WHERE UserId = ?", target.Id);
+            connection.Execute("DELETE FROM AuditLogs WHERE ActorUserId = ?", target.Id);
+            connection.Execute("DELETE FROM UserAccounts WHERE Id = ?", target.Id);
+        });
+    }
+
     public async Task ResetPasswordByFounderAsync(
         string actorUserId,
         string targetUserId,

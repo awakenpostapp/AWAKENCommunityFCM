@@ -16,6 +16,7 @@ import {
   login,
   logout,
   manageMember,
+  deleteMember,
   me,
   members,
   deleteClass,
@@ -91,6 +92,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (method === "DELETE" && params) return adminFounderAction(request, env, params[0]!, "delete");
 
   if ((method === "GET" || method === "POST") && path === "/v1/users") return members(request, env);
+  params = match(path, /^\/v1\/users\/([^/]+)$/u);
+  if (method === "DELETE" && params) return deleteMember(request, env, params[0]!);
   params = match(path, /^\/v1\/users\/([^/]+)\/profile$/u);
   if (method === "PATCH" && params) return updateProfile(request, env, params[0]!);
   params = match(path, /^\/v1\/users\/([^/]+)\/avatar$/u);

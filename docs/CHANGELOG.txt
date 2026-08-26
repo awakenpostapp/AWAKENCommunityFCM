@@ -1,5 +1,20 @@
 # Change log
 
+Release 3.4 - build 119 - 2026-08-26
+
+- Founder co nut Xoa account vinh vien trong ho so thanh vien va man hinh sua
+  ho so; thao tac yeu cau xac nhan truoc khi thuc hien.
+- Worker bo sung DELETE /v1/users/:id, kiem tra tenant va ma tran quyen:
+  Founder duoc xoa Coach, Trainee, Manager va Co-Founder; Co-Founder khong
+  duoc xoa Co-Founder khac; Manager va cac account khac khong duoc xoa.
+- Xoa account don du lieu lien quan (phan cong lop, diem danh, hoc phi, bill,
+  hoa don, luong, danh gia, thong bao, lien ket OAuth va media), xu ly
+  attendance co rang buoc RESTRICT, xoa object R2 va ghi audit.
+- Giu nguyen ApplicationId, database, Cloudflare, Supabase, R2, OAuth va
+  version hien thi 3.4; chi tang so build tu 118 len 119.
+- Build du Release APK, Release AAB va Debug APK; chi Release APK duoc dua
+  len GitHub Release.
+
 Release 3.4 - build 118 - 2026-08-22
 
 - Manager khong con quyen tao hoac chinh sua cau truc lop hoc; van giu cac

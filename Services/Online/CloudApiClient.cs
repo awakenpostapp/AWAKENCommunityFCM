@@ -365,6 +365,14 @@ public sealed class CloudApiClient
             idempotencyKey: idempotencyKey,
             cancellationToken: cancellationToken);
 
+    public Task DeleteMemberAsync(
+        string userId,
+        CancellationToken cancellationToken = default) =>
+        DeleteAsync(
+            $"users/{Uri.EscapeDataString(userId)}",
+            idempotencyKey: Guid.NewGuid().ToString("N"),
+            cancellationToken: cancellationToken);
+
     public Task MarkAllNotificationsReadAsync(CancellationToken cancellationToken = default) =>
         SendWithoutResponseAsync(
             HttpMethod.Post,

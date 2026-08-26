@@ -559,6 +559,13 @@ public sealed class MemberProfilePage : AsyncContentPage
             }
         }
 
+        if (RoleCapabilities.CanDeleteTarget(Session.CurrentUser?.Role, member.Account.Role))
+        {
+            var delete = UiKit.DestructiveButton("Xóa account vĩnh viễn");
+            delete.Clicked += async (_, _) => await DeleteMemberAsync(member, delete);
+            root.Children.Add(delete);
+        }
+
         var canEditAsFounder =
             RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
             && member.Account.Role != UserRole.Admin;
@@ -592,6 +599,31 @@ public sealed class MemberProfilePage : AsyncContentPage
         }
 
         Content = UiKit.KeyboardAwareScroll(root);
+    }
+
+    private async Task DeleteMemberAsync(MemberRow member, Button source)
+    {
+        var confirmed = await DisplayAlertAsync(
+            "Xóa account vĩnh viễn?",
+            $"Xóa @{member.Account.Username} sẽ xóa account và dữ liệu liên quan như lớp phân công, điểm danh, học phí, lương và đánh giá. Thao tác này không thể hoàn tác.",
+            "Xóa vĩnh viễn",
+            "Hủy");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        source.IsEnabled = false;
+        try
+        {
+            await _database.DeleteMemberAccountAsync(CurrentUserId, member.Account.Id);
+            await Navigation.PopAsync();
+        }
+        catch (Exception exception)
+        {
+            source.IsEnabled = true;
+            await DisplayAlertAsync("Chưa thể xóa account", exception.Message, "Đóng");
+        }
     }
 
     private async Task<bool> CanShowFounderParentPaymentAsync(MemberRow member)
@@ -1169,6 +1201,12 @@ public sealed class MemberEditorPage : ContentPage
                 : UiKit.SecondaryButton("Kích hoạt lại account", async (_, _) => await ToggleActiveAsync());
             form.Children.Add(reset);
             form.Children.Add(deactivate);
+            if (RoleCapabilities.CanDeleteTarget(_session.CurrentUser?.Role, existing.Account.Role))
+            {
+                var delete = UiKit.DestructiveButton("Xóa account vĩnh viễn");
+                delete.Clicked += async (_, _) => await DeleteExistingAsync(delete);
+                form.Children.Add(delete);
+            }
         }
 
         Content = existing is null
@@ -1354,6 +1392,36 @@ public sealed class MemberEditorPage : ContentPage
 
         await _database.SetUserActiveAsync(CurrentFounderId, _existing.Account.Id, activate);
         await Navigation.PopAsync();
+    }
+
+    private async Task DeleteExistingAsync(Button source)
+    {
+        if (_existing is null)
+        {
+            return;
+        }
+
+        var confirmed = await DisplayAlertAsync(
+            "Xóa account vĩnh viễn?",
+            $"Xóa @{_existing.Account.Username} sẽ xóa toàn bộ dữ liệu liên quan và không thể hoàn tác.",
+            "Xóa vĩnh viễn",
+            "Hủy");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        source.IsEnabled = false;
+        try
+        {
+            await _database.DeleteMemberAccountAsync(CurrentFounderId, _existing.Account.Id);
+            await Navigation.PopAsync();
+        }
+        catch (Exception exception)
+        {
+            source.IsEnabled = true;
+            await DisplayAlertAsync("Chưa thể xóa account", exception.Message, "Đóng");
+        }
     }
 
     private string CurrentFounderId =>

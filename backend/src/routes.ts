@@ -507,6 +507,92 @@ export async function members(request: Request, env: Env): Promise<Response> {
   return json({ members: rows.map((row) => ({ ...publicUser(row), fullName: row.full_name })) });
 }
 
+/**
+ * Permanently remove a tenant member and every record owned by that member.
+ *
+ * The database schema already uses tenant-scoped cascading foreign keys for
+ * operational data.  Attendance has one deliberate RESTRICT relationship
+ * (`recorded_by_user_id`), so those rows are removed explicitly before the
+ * user row.  Media keys are collected before the transaction and deleted from
+ * R2 only after the database mutation succeeds.
+ */
+export async function deleteMember(request: Request, env: Env, userId: string): Promise<Response> {
+  const auth = await authenticate(request, env);
+  if (!isFounderLike(auth.role)) {
+    throw new ApiError(403, "forbidden_member_management", "Chỉ Founder hoặc Co-Founder được xóa account.");
+  }
+  const tenantId = requireTenant(auth);
+  const target = await env.DB.prepare(
+    `SELECT id, tenant_id, username, role FROM users
+     WHERE id=? AND tenant_id=? AND role IN ('co_founder','manager','coach','trainee') LIMIT 1`,
+  ).bind(userId, tenantId).first<{ id: string; tenant_id: string; username: string; role: UserRole }>();
+  if (!target) throw new ApiError(404, "not_found", "Không tìm thấy thành viên trong đội hiện tại.");
+  assertCanDeleteTarget(auth.role, target.role);
+  if (target.id === auth.id) {
+    throw new ApiError(400, "forbidden_account_delete", "Không thể tự xóa account đang đăng nhập.");
+  }
+
+  const objectKeys = new Set<string>();
+  const addKeys = (rows: Array<{ object_key?: string | null }>) => {
+    for (const row of rows) {
+      const key = String(row.object_key ?? "").trim();
+      if (key) objectKeys.add(key);
+    }
+  };
+  addKeys(await allRows<{ object_key: string }>(env.DB.prepare(
+    "SELECT object_key FROM uploads WHERE tenant_id=? AND owner_user_id=?",
+  ).bind(tenantId, target.id)));
+  addKeys(await allRows<{ object_key: string }>(env.DB.prepare(
+    "SELECT photo_object_key AS object_key FROM profiles WHERE tenant_id=? AND user_id=? AND photo_object_key<>''",
+  ).bind(tenantId, target.id)));
+  addKeys(await allRows<{ object_key: string }>(env.DB.prepare(
+    `SELECT checkin_selfie_object_key AS object_key FROM coach_checkins
+     WHERE tenant_id=? AND coach_user_id=? AND checkin_selfie_object_key<>''
+     UNION ALL
+     SELECT checkout_selfie_object_key AS object_key FROM coach_checkins
+     WHERE tenant_id=? AND coach_user_id=? AND checkout_selfie_object_key<>''`,
+  ).bind(tenantId, target.id, tenantId, target.id)));
+  addKeys(await allRows<{ object_key: string }>(env.DB.prepare(
+    `SELECT pp.image_object_key AS object_key
+       FROM payment_proofs pp
+       JOIN tuition_invoices ti ON ti.id=pp.invoice_id AND ti.tenant_id=pp.tenant_id
+      WHERE pp.tenant_id=? AND ti.trainee_user_id=? AND pp.image_object_key<>''`,
+  ).bind(tenantId, target.id)));
+  addKeys(await allRows<{ object_key: string }>(env.DB.prepare(
+    `SELECT r.pdf_object_key AS object_key
+       FROM receipts r
+       JOIN tuition_invoices ti ON ti.id=r.invoice_id AND ti.tenant_id=r.tenant_id
+      WHERE r.tenant_id=? AND ti.trainee_user_id=? AND r.pdf_object_key<>''`,
+  ).bind(tenantId, target.id)));
+  if (objectKeys.size > 0 && !env.FILES) {
+    throw new ApiError(503, "storage_unavailable", "Không thể xóa account khi kho R2 chưa sẵn sàng. Vui lòng thử lại sau.");
+  }
+
+  await env.DB.batch([
+    // `recorded_by_user_id` intentionally uses ON DELETE RESTRICT.  Removing
+    // these rows first keeps deletion safe for a Coach/Founder substitute who
+    // recorded attendance for another member.
+    env.DB.prepare("DELETE FROM attendance_records WHERE tenant_id=? AND recorded_by_user_id=?")
+      .bind(tenantId, target.id),
+    // Audit entries authored by the deleted account are part of its tenant
+    // data. Keep audit entries written by the Founder while removing the
+    // deleted member's own activity trail.
+    env.DB.prepare("DELETE FROM audit_logs WHERE tenant_id=? AND actor_user_id=?")
+      .bind(tenantId, target.id),
+    env.DB.prepare("DELETE FROM users WHERE id=? AND tenant_id=?")
+      .bind(target.id, tenantId),
+  ]);
+  await audit(env, tenantId, auth.id, "member.deleted", "user", target.id, {
+    role: target.role,
+    username: target.username,
+    permanent: true,
+  });
+  if (env.FILES) {
+    await Promise.allSettled([...objectKeys].map((objectKey) => env.FILES!.delete(objectKey)));
+  }
+  return noContent();
+}
+
 export async function updateProfile(request: Request, env: Env, userId: string): Promise<Response> {
   const auth = await authenticate(request, env);
   const tenantId = requireTenant(auth);
