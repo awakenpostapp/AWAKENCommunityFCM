@@ -6,6 +6,21 @@ using CommunityFootballClubManager.Ui;
 
 namespace CommunityFootballClubManager.Views;
 
+internal static class MemberNavigationRefresh
+{
+    public static void InvalidateParentPages(Page childPage)
+    {
+        var stack = childPage.Navigation.NavigationStack;
+        for (var index = 0; index < stack.Count - 1; index++)
+        {
+            if (stack[index] is AsyncContentPage page)
+            {
+                page.InvalidateLoadCache();
+            }
+        }
+    }
+}
+
 public sealed class MemberManagementPage : AsyncContentPage
 {
     private readonly AppDatabase _database;
@@ -617,6 +632,7 @@ public sealed class MemberProfilePage : AsyncContentPage
         try
         {
             await _database.DeleteMemberAccountAsync(CurrentUserId, member.Account.Id);
+            MemberNavigationRefresh.InvalidateParentPages(this);
             await Navigation.PopAsync();
         }
         catch (Exception exception)
@@ -1415,6 +1431,7 @@ public sealed class MemberEditorPage : ContentPage
         try
         {
             await _database.DeleteMemberAccountAsync(CurrentFounderId, _existing.Account.Id);
+            MemberNavigationRefresh.InvalidateParentPages(this);
             await Navigation.PopAsync();
         }
         catch (Exception exception)

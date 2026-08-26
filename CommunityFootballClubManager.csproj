@@ -29,7 +29,7 @@
 		<!-- Release 3.4: keep the package/application ID stable so installed
 		     data, OAuth callbacks and the Cloudflare connection remain intact. -->
 		<ApplicationDisplayVersion>3.4</ApplicationDisplayVersion>
-		<ApplicationVersion>119</ApplicationVersion>
+		<ApplicationVersion>120</ApplicationVersion>
 
 		<SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
 		<AndroidUseAapt2>true</AndroidUseAapt2>

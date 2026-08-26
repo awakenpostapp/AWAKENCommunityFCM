@@ -1,5 +1,15 @@
 # Change log
 
+Release 3.4 - build 120 - 2026-08-26
+
+- Sua loi sau khi Founder xoa account thanh vien: danh sach thanh vien va cac
+  trang ho so cha duoc danh dau can tai lai ngay khi thao tac xoa thanh cong,
+  khong con giu account vua xoa trong cua so cache 20 giay.
+- Giu nguyen database, Cloudflare Worker, Supabase, D1, R2, OAuth va
+  ApplicationId; chi tang so build tu 119 len 120.
+- Build du Release APK, Release AAB va Debug APK; chi Release APK duoc dua
+  len GitHub Release.
+
 Release 3.4 - build 119 - 2026-08-26
 
 - Founder co nut Xoa account vinh vien trong ho so thanh vien va man hinh sua

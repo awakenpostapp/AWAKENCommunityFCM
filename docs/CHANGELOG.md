@@ -1,5 +1,15 @@
 # Change log
 
+## Release 3.4 — build 120 — 2026-08-26
+
+- Sửa lỗi sau khi Founder xóa account thành viên: danh sách thành viên và các
+  trang hồ sơ cha được đánh dấu cần tải lại ngay khi thao tác xóa thành công,
+  không còn giữ account vừa xóa trong cửa sổ cache 20 giây.
+- Giữ nguyên database, Cloudflare Worker, Supabase, D1, R2, OAuth và
+  ApplicationId; chỉ tăng số build từ 119 lên 120.
+- Build đủ Release APK, Release AAB và Debug APK; chỉ Release APK được đưa
+  lên GitHub Release.
+
 ## Release 3.4 — build 119 — 2026-08-26
 
 - Founder có nút **Xóa account vĩnh viễn** trong hồ sơ thành viên và màn hình

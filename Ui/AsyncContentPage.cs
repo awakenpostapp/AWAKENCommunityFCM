@@ -79,6 +79,19 @@ public abstract class AsyncContentPage : ContentPage
         }
     }
 
+    /// <summary>
+    /// Marks this page stale so the next navigation back to it performs an
+    /// authoritative load immediately. Mutations made on a child page (for
+    /// example deleting a member from its profile) use this to bypass the
+    /// short appearing freshness window without making every tab navigation
+    /// perform a network request.
+    /// </summary>
+    public void InvalidateLoadCache()
+    {
+        _hasLoaded = false;
+        _lastLoadedAtUtc = DateTime.MinValue;
+    }
+
     protected abstract Task LoadAsync();
 
     /// <summary>
