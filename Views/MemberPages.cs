@@ -162,6 +162,8 @@ public sealed class MemberRoleListPage : AsyncContentPage
     private List<MemberRow> _members = [];
     private IReadOnlyDictionary<string, TraineeTuitionSummary> _traineeTuition =
         new Dictionary<string, TraineeTuitionSummary>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, TraineeAchievementSummary> _achievementSummaries =
+        new Dictionary<string, TraineeAchievementSummary>(StringComparer.Ordinal);
 
     public MemberRoleListPage(
         AppDatabase database,
@@ -223,10 +225,47 @@ public sealed class MemberRoleListPage : AsyncContentPage
                         group.Sum(item => Math.Max(1, item.Invoice.CycleCount)),
                         group.Sum(item => Math.Max(0, item.Progress.AttendedSessions))),
                     StringComparer.Ordinal);
+
+            // A single role-scoped feed supplies each trainee's own badge
+            // projection. Do not query once per card: this keeps the online
+            // list fast while preserving the tenant/RBAC boundary enforced by
+            // the Worker.
+            var actorRole = Session.CurrentUser?.Role;
+            if (actorRole is UserRole.Founder
+                or UserRole.CoFounder
+                or UserRole.Coach
+                or UserRole.Trainee)
+            {
+                try
+                {
+                    var feed = actorRole == UserRole.Trainee
+                        ? await _database.GetAchievementsAsync(CurrentUserId, CurrentUserId)
+                        : await _database.GetAchievementsAsync(CurrentUserId);
+                    _achievementSummaries = AchievementBadgeUi.Summarize(
+                        feed,
+                        actorRole == UserRole.Trainee ? CurrentUserId : null);
+                }
+                catch (Exception exception)
+                {
+                    // Achievement data is supplemental to the member list;
+                    // keep the roster usable if an older Worker has not yet
+                    // exposed the achievement endpoint.
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Không thể tải biểu trưng học viên: {exception.Message}");
+                    _achievementSummaries = new Dictionary<string, TraineeAchievementSummary>(
+                        StringComparer.Ordinal);
+                }
+            }
+            else
+            {
+                _achievementSummaries = new Dictionary<string, TraineeAchievementSummary>(
+                    StringComparer.Ordinal);
+            }
         }
         else
         {
             _traineeTuition = new Dictionary<string, TraineeTuitionSummary>(StringComparer.Ordinal);
+            _achievementSummaries = new Dictionary<string, TraineeAchievementSummary>(StringComparer.Ordinal);
         }
         _summary.Text =
             $"{_members.Count} account · Chạm vào một hồ sơ để xem thông tin.";
@@ -274,9 +313,25 @@ public sealed class MemberRoleListPage : AsyncContentPage
         var avatar = UiKit.Avatar(member.Profile.PhotoPath);
         grid.Children.Add(avatar);
 
+        var identity = new VerticalStackLayout
+        {
+            Spacing = 2,
+            Children = { UiKit.Headline(member.DisplayName) }
+        };
+        var actorCanViewAchievements = Session.CurrentUser?.Role is UserRole.Founder
+            or UserRole.CoFounder
+            or UserRole.Coach
+            or UserRole.Trainee;
+        if (member.Account.Role == UserRole.Trainee && actorCanViewAchievements)
+        {
+            identity.Children.Add(AchievementBadgeUi.SummaryView(
+                _achievementSummaries.GetValueOrDefault(member.Account.Id)
+                ?? AchievementBadgeUi.EmptySummary()));
+        }
+
         var textChildren = new List<View>
         {
-            UiKit.Headline(member.DisplayName)
+            identity
         };
         if (member.Account.Role == UserRole.Trainee)
         {

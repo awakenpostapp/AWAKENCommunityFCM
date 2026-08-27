@@ -156,6 +156,15 @@ public sealed record AchievementFeed(
     int TotalPoints,
     int PendingCount);
 
+/// <summary>
+/// Per-trainee achievement projection used by member and class rosters.
+/// Points are summed from each trainee's immutable achievement snapshot; they
+/// are never taken from a shared badge/catalog total.
+/// </summary>
+public sealed record TraineeAchievementSummary(
+    IReadOnlyList<AchievementRow> VisibleBadges,
+    int TotalPoints);
+
 public sealed record DashboardMetrics(
     int ActiveClasses,
     int ActiveCoaches,

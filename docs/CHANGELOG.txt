@@ -987,6 +987,16 @@ So với Demo 1.8:
 - Bump phiên bản ứng dụng từ `1.8 (9)` lên `1.9 (10)`.
 - Bổ sung APK Debug và Android App Bundle với tên có phiên bản, không ghi đè các artifact cũ.
 
+## Achievement badges — 2026-08-28
+
+So với bản trước:
+
+- Tách đủ 21 biểu trưng từ ảnh nguồn thành PNG nền trong suốt, giữ nguyên tên và quy ước điểm đã duyệt (500, 150, 100, 60, 30, 20, 15, 10, -10, -30).
+- Bổ sung ánh xạ asset cho toàn bộ biểu trưng trong trang Thành tích và trang chi tiết.
+- Điểm được chiếu theo từng Cầu thủ học viên từ points_snapshot của từng lượt trao; không còn hiểu là điểm dùng chung của biểu trưng.
+- Hiển thị các biểu trưng đang còn hiệu lực cùng tổng điểm cá nhân ngay dưới tên học viên trong danh sách thành viên, lớp học hiện tại và lịch sử lớp học.
+- Không cần migration/deploy backend: dữ liệu đã có khóa tenant_id, trainee_user_id và snapshot điểm riêng cho từng lượt trao.
+
 ## Quy ước
 
 Mỗi thay đổi tiếp theo phải thêm một mục mới vào file này, ghi rõ phiên bản, ngày thực hiện và các khác biệt so với bản trước.

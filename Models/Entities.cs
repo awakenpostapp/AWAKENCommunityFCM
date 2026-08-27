@@ -467,6 +467,11 @@ public sealed class TraineeAchievement
     public string EventName { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public DateTime AwardedForDateUtc { get; set; } = DateTime.UtcNow.Date;
+    /// <summary>
+    /// Immutable points snapshot for this trainee's award. It is copied from
+    /// the badge catalog at award time so every trainee accumulates points in
+    /// their own ledger; the catalog value is never a shared user total.
+    /// </summary>
     public int Points { get; set; }
     public AchievementStatus Status { get; set; } = AchievementStatus.Pending;
     public string CreatedByUserId { get; set; } = string.Empty;

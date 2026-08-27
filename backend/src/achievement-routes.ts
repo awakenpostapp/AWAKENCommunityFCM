@@ -455,6 +455,9 @@ export async function achievements(request: Request, env: Env): Promise<Response
     if (traineeFilter) { totalWhere += " AND trainee_user_id=?"; totalValues.push(traineeFilter); }
     if (classFilter) { totalWhere += " AND class_id=?"; totalValues.push(classFilter); }
     if (category) { totalWhere += " AND category=?"; totalValues.push(category); }
+    // Sum the immutable snapshot stored on each trainee award. The catalog's
+    // badge points are only used when creating a new award; they must never be
+    // treated as one shared score for every trainee.
     const total = await env.DB.prepare(
       `SELECT COALESCE(SUM(points_snapshot), 0) AS points
          FROM trainee_achievements

@@ -564,6 +564,29 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
                 .ToDictionary(item => item.Account.Id, StringComparer.Ordinal);
             var invoices = await _database.GetInvoicesAsync(CurrentUserId);
             var enrollments = await _database.GetClassEnrollmentsAsync(_row.Class.Id);
+            IReadOnlyDictionary<string, TraineeAchievementSummary> achievementSummaries =
+                new Dictionary<string, TraineeAchievementSummary>(StringComparer.Ordinal);
+            var actorRole = Session.CurrentUser?.Role;
+            if (actorRole is UserRole.Founder
+                or UserRole.CoFounder
+                or UserRole.Coach
+                or UserRole.Trainee)
+            {
+                try
+                {
+                    var feed = actorRole == UserRole.Trainee
+                        ? await _database.GetAchievementsAsync(CurrentUserId, CurrentUserId, _row.Class.Id)
+                        : await _database.GetAchievementsAsync(CurrentUserId, classId: _row.Class.Id);
+                    achievementSummaries = AchievementBadgeUi.Summarize(
+                        feed,
+                        actorRole == UserRole.Trainee ? CurrentUserId : null);
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Không thể tải biểu trưng trong lịch sử lớp học: {exception.Message}");
+                }
+            }
             foreach (var attendance in roster)
             {
                 if (!members.TryGetValue(attendance.TraineeUserId, out var member))
@@ -603,7 +626,14 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
                     member,
                     attendance,
                     enrollment,
-                    progress));
+                    progress,
+                    achievementSummaries.GetValueOrDefault(attendance.TraineeUserId)
+                    ?? (actorRole is UserRole.Founder
+                        or UserRole.CoFounder
+                        or UserRole.Coach
+                        or UserRole.Trainee
+                        ? AchievementBadgeUi.EmptySummary()
+                        : null)));
             }
         }
 
@@ -652,7 +682,8 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
         MemberRow member,
         AttendanceRosterItem attendance,
         ClassEnrollment? enrollment,
-        TuitionCycleProgress progress)
+        TuitionCycleProgress progress,
+        TraineeAchievementSummary? achievementSummary = null)
     {
         var grid = new Grid
         {
@@ -665,12 +696,21 @@ public sealed class ClassHistoryDetailsPage : AsyncContentPage
             }
         };
         grid.Children.Add(UiKit.Avatar(member.Profile.PhotoPath, 48));
+        var identity = new VerticalStackLayout
+        {
+            Spacing = 2,
+            Children = { UiKit.Headline(member.DisplayName) }
+        };
+        if (achievementSummary is not null)
+        {
+            identity.Children.Add(AchievementBadgeUi.SummaryView(achievementSummary));
+        }
         var text = new VerticalStackLayout
         {
             Spacing = 2,
             Children =
             {
-                UiKit.Headline(member.DisplayName),
+                identity,
                 UiKit.Caption(DomainText.Role(member.Account.Role)),
                 UiKit.Caption(
                     member.Account.IsTuitionSupported
@@ -923,6 +963,33 @@ public sealed class ClassDetailsPage : ContentPage
             return;
         }
 
+        IReadOnlyDictionary<string, TraineeAchievementSummary> achievementSummaries =
+            new Dictionary<string, TraineeAchievementSummary>(StringComparer.Ordinal);
+        if (role is UserRole.Founder
+            or UserRole.CoFounder
+            or UserRole.Coach
+            or UserRole.Trainee)
+        {
+            try
+            {
+                var actorId = _session.CurrentUser?.Id
+                              ?? throw new UnauthorizedAccessException("Phiên đăng nhập đã kết thúc.");
+                var feed = role == UserRole.Trainee
+                    ? await _database.GetAchievementsAsync(actorId, actorId, _row.Class.Id)
+                    : await _database.GetAchievementsAsync(actorId, classId: _row.Class.Id);
+                achievementSummaries = AchievementBadgeUi.Summarize(
+                    feed,
+                    role == UserRole.Trainee ? actorId : null);
+            }
+            catch (Exception exception)
+            {
+                // A roster should remain usable if achievement data is not
+                // available (for example while an older Worker is deploying).
+                System.Diagnostics.Debug.WriteLine(
+                    $"Không thể tải biểu trưng trong lớp học: {exception.Message}");
+            }
+        }
+
         foreach (var trainee in _row.Trainees)
         {
             var canOpenEvaluations = RoleCapabilities.IsFounderLike(role)
@@ -955,7 +1022,14 @@ public sealed class ClassDetailsPage : ContentPage
                 _session,
                 media,
                 rememberedLogin,
-                RoleCapabilities.IsFounderLike(role) ? evaluationButton : null);
+                RoleCapabilities.IsFounderLike(role) ? evaluationButton : null,
+                achievementSummaries.GetValueOrDefault(trainee.Account.Id)
+                ?? (role is UserRole.Founder
+                    or UserRole.CoFounder
+                    or UserRole.Coach
+                    or UserRole.Trainee
+                    ? AchievementBadgeUi.EmptySummary()
+                    : null));
             var memberAndEvaluation = new VerticalStackLayout
             {
                 Spacing = 6,
@@ -1141,7 +1215,8 @@ public sealed class ClassDetailsPage : ContentPage
         SessionService session,
         MediaService media,
         RememberedLoginService rememberedLogin,
-        Button? trailingAction = null)
+        Button? trailingAction = null,
+        TraineeAchievementSummary? achievementSummary = null)
     {
         var grid = new Grid
         {
@@ -1157,12 +1232,22 @@ public sealed class ClassDetailsPage : ContentPage
         };
         var avatar = UiKit.Avatar(member.Profile.PhotoPath, 48);
         grid.Children.Add(avatar);
+        var identity = new VerticalStackLayout
+        {
+            Spacing = 2,
+            Children = { UiKit.Headline(member.DisplayName) }
+        };
+        if (member.Account.Role == UserRole.Trainee
+            && achievementSummary is not null)
+        {
+            identity.Children.Add(AchievementBadgeUi.SummaryView(achievementSummary));
+        }
         var text = new VerticalStackLayout
         {
             Spacing = 2,
             Children =
             {
-                UiKit.Headline(member.DisplayName),
+                identity,
                 member.Account.Role == UserRole.Coach
                     ? UiKit.Caption(CoachPositionCatalog.Label(member.Profile.CoachPosition), UiKit.Primary)
                     : UiKit.Caption(DomainText.Role(member.Account.Role))

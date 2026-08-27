@@ -78,7 +78,11 @@ public sealed class AchievementHubPage : AsyncContentPage
                 Spacing = 2,
                 Children =
                 {
-                    UiKit.Caption("Điểm thành tích tích lũy", UiKit.TextSecondary),
+                    UiKit.Caption(
+                        role == UserRole.Trainee
+                            ? "Điểm cá nhân tích lũy"
+                            : "Tổng điểm trong phạm vi",
+                        UiKit.TextSecondary),
                     UiKit.LargeTitle(_feed.TotalPoints.ToString("+#;-#;0"))
                 }
             };
@@ -154,7 +158,7 @@ public sealed class AchievementHubPage : AsyncContentPage
             }
 
             _list.Children.Add(UiKit.Caption(
-                "Biểu trưng hiển thị trong 30 ngày. Điểm đã ghi nhận được giữ lại vĩnh viễn để tích lũy và đổi quà (Coming soon).",
+                "Mỗi Cầu thủ học viên có biểu trưng và điểm riêng. Biểu trưng hiển thị trong 30 ngày; điểm đã ghi nhận được giữ lại vĩnh viễn để tích lũy và đổi quà (Coming soon).",
                 UiKit.TextSecondary));
 
             if (rows.Count == 0)
@@ -215,13 +219,8 @@ public sealed class AchievementHubPage : AsyncContentPage
             },
             ColumnSpacing = 10
         };
-        var icon = new Image
-        {
-            Source = "icon_trophy.svg",
-            WidthRequest = 28,
-            HeightRequest = 28,
-            VerticalOptions = LayoutOptions.Start
-        };
+        var icon = AchievementBadgeUi.BadgeImage(row.Badge, 36);
+        icon.VerticalOptions = LayoutOptions.Start;
         heading.Children.Add(icon);
         var title = string.IsNullOrWhiteSpace(row.Achievement.Title)
             ? row.Badge.Name
@@ -318,13 +317,7 @@ public sealed class AchievementHubPage : AsyncContentPage
             },
             ColumnSpacing = 8
         };
-        grid.Children.Add(new Image
-        {
-            Source = "icon_trophy.svg",
-            WidthRequest = 22,
-            HeightRequest = 22,
-            VerticalOptions = LayoutOptions.Center
-        });
+        grid.Children.Add(AchievementBadgeUi.BadgeImage(row.Badge, 28));
         var text = new VerticalStackLayout
         {
             Spacing = 1,
@@ -414,6 +407,7 @@ public sealed class AchievementDetailsPage : ContentPage
             Spacing = 8,
             Children =
             {
+                AchievementBadgeUi.BadgeImage(row.Badge, 96),
                 UiKit.LargeTitle(title),
                 UiKit.StatusBadge(points,
                     row.Achievement.Points >= 0 ? UiKit.Success : UiKit.Danger),
@@ -469,6 +463,11 @@ public sealed class AchievementCreatePage : AsyncContentPage
         MinimumHeightRequest = 80
     };
     private readonly DatePicker _date = new() { Date = DateTime.Today, Format = "dd/MM/yyyy" };
+    private readonly VerticalStackLayout _badgePreview = new()
+    {
+        Spacing = 2,
+        HorizontalOptions = LayoutOptions.Center
+    };
     private IReadOnlyList<AchievementBadge> _badges = [];
     private IReadOnlyList<MemberRow> _trainees = [];
     private IReadOnlyList<ClassRow> _classes = [];
@@ -485,6 +484,7 @@ public sealed class AchievementCreatePage : AsyncContentPage
         };
         _category.SelectedIndex = 0;
         _category.SelectedIndexChanged += (_, _) => RefreshBadges();
+        _badge.SelectedIndexChanged += (_, _) => RefreshBadgePreview();
         _badge.ItemDisplayBinding = new Binding(nameof(AchievementBadge.Name));
         _trainee.ItemDisplayBinding = new Binding(nameof(MemberRow.DisplayName));
         _class.ItemDisplayBinding = new Binding(nameof(ClassRow.Class.Name));
@@ -500,6 +500,7 @@ public sealed class AchievementCreatePage : AsyncContentPage
                 UiKit.Caption("Founder/Đồng Sáng lập được xác nhận trực tiếp. Đề xuất của Coach sẽ chờ Founder duyệt.", UiKit.TextSecondary),
                 UiKit.LabeledField("HẠNG MỤC", _category),
                 UiKit.LabeledField("BIỂU TRƯNG", _badge),
+                _badgePreview,
                 UiKit.LabeledField("CẦU THỦ HỌC VIÊN", _trainee),
                 UiKit.LabeledField("LỚP HỌC", _class),
                 UiKit.LabeledField("TIÊU ĐỀ", _title),
@@ -537,6 +538,21 @@ public sealed class AchievementCreatePage : AsyncContentPage
         _badge.ItemsSource = _badges.Where(item => item.Category == category).ToList();
         if (_badge.ItemsSource is System.Collections.IList list && list.Count > 0)
             _badge.SelectedIndex = 0;
+        RefreshBadgePreview();
+    }
+
+    private void RefreshBadgePreview()
+    {
+        _badgePreview.Children.Clear();
+        if (_badge.SelectedItem is not AchievementBadge badge)
+            return;
+
+        var image = AchievementBadgeUi.BadgeImage(badge, 70);
+        image.HorizontalOptions = LayoutOptions.Center;
+        _badgePreview.Children.Add(image);
+        _badgePreview.Children.Add(UiKit.Caption(
+            badge.Points >= 0 ? $"+{badge.Points} điểm" : $"{badge.Points} điểm",
+            badge.Points >= 0 ? UiKit.Success : UiKit.Danger));
     }
 
     private async Task SaveAsync(Button source)

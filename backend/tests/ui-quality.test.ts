@@ -9,6 +9,9 @@ const login = await readFile(new URL("Views/LoginPage.cs", root), "utf8");
 const receipt = await readFile(new URL("Platforms/Android/AndroidReceiptPdfService.cs", root), "utf8");
 const uiKit = await readFile(new URL("Ui/UiKit.cs", root), "utf8");
 const achievements = await readFile(new URL("Views/AchievementPages.cs", root), "utf8");
+const achievementBadgeUi = await readFile(new URL("Ui/AchievementBadgeUi.cs", root), "utf8");
+const members = await readFile(new URL("Views/MemberPages.cs", root), "utf8");
+const classes = await readFile(new URL("Views/ClassPages.cs", root), "utf8");
 
 test("startup surfaces safe user-facing errors", () => {
   assert.match(bootstrap, /AsyncContentPage\.UserMessage\(exception\)/u);
@@ -33,4 +36,13 @@ test("achievement hub does not re-parent a shared switch while re-rendering", ()
   assert.doesNotMatch(achievements, /private readonly Switch _compactMode\b/u);
   assert.match(achievements, /private bool _compactModeEnabled\b/u);
   assert.match(achievements, /new Switch\s*\{\s*IsToggled\s*=\s*_compactModeEnabled/u);
+});
+
+test("achievement badges and points are projected per trainee in rosters", () => {
+  assert.match(achievementBadgeUi, /GroupBy\(item\s*=>\s*item\.Achievement\.TraineeUserId/u);
+  assert.match(achievementBadgeUi, /TotalPoints\s*=\s*feed\.TotalPoints/u);
+  assert.match(achievementBadgeUi, /achievement_badge_/u);
+  assert.match(achievements, /AchievementBadgeUi\.BadgeImage\(row\.Badge/u);
+  assert.match(members, /AchievementBadgeUi\.SummaryView\(/u);
+  assert.match(classes, /AchievementBadgeUi\.SummaryView\(/u);
 });

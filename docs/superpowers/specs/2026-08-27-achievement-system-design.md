@@ -61,7 +61,7 @@ Thông báo dùng bảng `notifications`: yêu cầu mới gửi Founder/Co-Foun
 - Thêm DTO/API methods trong `CloudApiClient`, các phương thức role-scoped trong `AppDatabase`, cùng list volatile trong `OnlineDataState`.
 - Thêm `AchievementPages.cs`: danh sách theo nhóm, tổng điểm, bộ lọc, chuyển đổi thẻ lớn/danh sách gọn; Founder có vùng “Chờ duyệt” và nút duyệt/từ chối/gỡ; Coach có form tạo với lý do bắt buộc; Trainee chỉ xem.
 - Tab dùng icon riêng `tab_achievements.svg`, giữ layout Apple HIG hiện tại, card compact, trạng thái màu rõ ràng và nhãn “Coming soon” cho đổi quà.
-- Badge image dùng `asset_key` chung và mapping icon trong client cho đến khi có bộ ảnh từng huy hiệu riêng. Không cắt ảnh reference tự động và không đưa ảnh composite vào dữ liệu cá nhân.
+- Badge image dùng `asset_key` chung và mapping tới 21 PNG nền trong suốt đã tách chính xác từ ảnh biểu trưng được duyệt. Ảnh composite chỉ là nguồn thiết kế, không được lưu vào dữ liệu cá nhân; mỗi lượt trao vẫn giữ `points_snapshot` riêng theo `trainee_user_id`.
 
 ## Xử lý lỗi và nhất quán
 

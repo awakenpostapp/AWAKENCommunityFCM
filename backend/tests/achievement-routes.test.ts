@@ -27,6 +27,12 @@ test("achievement route enforces the approval and expiry lifecycle", () => {
   assert.match(routes, /points_snapshot/);
 });
 
+test("achievement totals are scoped to each trainee award snapshot", () => {
+  assert.match(routes, /SUM\(points_snapshot\)/);
+  assert.match(routes, /trainee_user_id=\?/);
+  assert.doesNotMatch(routes, /SUM\(badge_points\)/);
+});
+
 test("Coach proposals require a reason and class access", () => {
   assert.match(routes, /auth\.role === "coach"\s*\n\s*\? requireText\(body\.reason, "reason", 2_000\)/);
   assert.match(routes, /Coach phải chọn lớp học được phân công/);
