@@ -996,6 +996,7 @@ So với bản trước:
 - Điểm được chiếu theo từng Cầu thủ học viên từ points_snapshot của từng lượt trao; không còn hiểu là điểm dùng chung của biểu trưng.
 - Hiển thị các biểu trưng đang còn hiệu lực cùng tổng điểm cá nhân ngay dưới tên học viên trong danh sách thành viên, lớp học hiện tại và lịch sử lớp học.
 - Không cần migration/deploy backend: dữ liệu đã có khóa tenant_id, trainee_user_id và snapshot điểm riêng cho từng lượt trao.
+- Tăng số build Android từ 122 lên 123 (giữ nguyên version 3.4); tạo đủ Release APK/AAB và Debug APK, chỉ publish Release APK.
 
 ## Quy ước
 
