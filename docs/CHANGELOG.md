@@ -1,5 +1,26 @@
 # Change log
 
+## Hệ thống thành tích — 2026-08-27 (build unchanged: 120)
+
+- Thêm tab **Thành tích** cho Founder, Đồng Sáng lập, Coach và Cầu thủ học
+  viên; Manager không có tab vì không được cấp nghiệp vụ thành tích.
+- Thêm hai hạng mục: **Xếp hạng giao hữu / giải đấu** và **Xếp hạng lớp học
+  theo tuần**. Founder/Đồng Sáng lập được ghi nhận và duyệt; Coach chỉ gửi
+  đề xuất kèm lý do; chỉ Founder được gỡ biểu trưng.
+- Thêm catalog 21 biểu trưng dùng chung, với đúng tập điểm đã duyệt trong
+  ảnh: `500, 150, 100, 60, 30, 20, 15, 10, -10, -30`. Điểm được chụp tại
+  thời điểm ghi nhận và giữ vĩnh viễn; biểu trưng được hiển thị 30 ngày rồi
+  chuyển hết hạn mà không làm mất điểm.
+- Thêm migration additive cho Cloudflare D1 và Supabase, RLS/index, API
+  `achievement-badges`, `achievements`, duyệt và gỡ; các mutation có
+  idempotency, kiểm tra tenant/quyền, audit và thông báo trong ứng dụng.
+- Thêm client/API model và data access online tách khỏi operational snapshot,
+  tránh làm chậm đăng nhập; Android có bộ lọc, chế độ danh sách gọn, chi tiết,
+  tạo đề xuất và duyệt/gỡ theo quyền.
+- Đã kiểm tra cục bộ: 55 test Worker, typegen, typecheck, build, Worker
+  dry-run và MAUI compile đều đạt. Chưa áp dụng migration Supabase production
+  hoặc deploy Worker trong checkpoint này.
+
 ## Production hotfix — 2026-08-26 (build unchanged: 120)
 
 - Sửa lỗi không thể lưu khi sửa lớp hoặc thêm Cầu Thủ Học Viên online: Supabase

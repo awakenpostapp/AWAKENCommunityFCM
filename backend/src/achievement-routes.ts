@@ -16,7 +16,6 @@ import {
 import {
   ApiError,
   json,
-  noContent,
   optionalText,
   readJson,
   requireDateKey,
@@ -547,22 +546,31 @@ export async function reviewAchievement(request: Request, env: Env, achievementI
     : body.approved;
   if (typeof approved !== "boolean") throw new ApiError(400, "validation_error", "approved phải là boolean.");
   const note = optionalText(body.reviewNote ?? body.note, "reviewNote", 2_000);
-  const current = await getAchievementRow(env, tenantId, achievementId);
-  if (current.status !== "pending") {
-    throw new ApiError(409, "achievement_already_reviewed", "Thành tích này đã được xử lý trước đó.");
+  const idempotency = await reserveIdempotency(request, env, auth, tenantId);
+  if (idempotency.replay) return idempotency.replay;
+  try {
+    const current = await getAchievementRow(env, tenantId, achievementId);
+    if (current.status !== "pending") {
+      throw new ApiError(409, "achievement_already_reviewed", "Thành tích này đã được xử lý trước đó.");
+    }
+    const now = nowIso();
+    const status: AchievementStatus = approved ? "approved" : "rejected";
+    await env.DB.prepare(
+      `UPDATE trainee_achievements
+          SET status=?, reviewed_by_user_id=?, reviewed_at=?, review_note=?, updated_at=?
+        WHERE id=? AND tenant_id=? AND status='pending'`,
+    ).bind(status, auth.id, now, note, now, achievementId, tenantId).run();
+    const saved = await getAchievementRow(env, tenantId, achievementId);
+    await notifyAchievementApproved(env, tenantId, saved, approved);
+    await audit(env, tenantId, auth.id, approved ? "achievement.approved" : "achievement.rejected",
+      "trainee_achievement", achievementId, { note });
+    const responseBody = { achievement: achievementJson(saved) };
+    await finishIdempotency(env, auth, idempotency.key, 200, responseBody);
+    return json(responseBody);
+  } catch (error) {
+    if (idempotency.reserved) await cancelIdempotency(env, auth, idempotency.key);
+    throw error;
   }
-  const now = nowIso();
-  const status: AchievementStatus = approved ? "approved" : "rejected";
-  await env.DB.prepare(
-    `UPDATE trainee_achievements
-        SET status=?, reviewed_by_user_id=?, reviewed_at=?, review_note=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status='pending'`,
-  ).bind(status, auth.id, now, note, now, achievementId, tenantId).run();
-  const saved = await getAchievementRow(env, tenantId, achievementId);
-  await notifyAchievementApproved(env, tenantId, saved, approved);
-  await audit(env, tenantId, auth.id, approved ? "achievement.approved" : "achievement.rejected",
-    "trainee_achievement", achievementId, { note });
-  return json({ achievement: achievementJson(saved) });
 }
 
 export async function removeAchievement(request: Request, env: Env, achievementId: string): Promise<Response> {
@@ -570,17 +578,27 @@ export async function removeAchievement(request: Request, env: Env, achievementI
   const tenantId = requireTenant(auth);
   assertCanRemoveAchievement(auth.role);
   if (request.method !== "DELETE") throw new ApiError(405, "method_not_allowed", "Phương thức không được hỗ trợ.");
-  const current = await getAchievementRow(env, tenantId, achievementId);
-  if (current.status === "removed") return noContent();
-  const now = nowIso();
-  await env.DB.prepare(
-    `UPDATE trainee_achievements
-        SET status='removed', removed_at=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status<>'removed'`,
-  ).bind(now, now, achievementId, tenantId).run();
-  await audit(env, tenantId, auth.id, "achievement.removed", "trainee_achievement", achievementId, {
-    previousStatus: current.status,
-    pointsRetained: Number(current.points_snapshot ?? 0),
-  });
-  return noContent();
+  const idempotency = await reserveIdempotency(request, env, auth, tenantId);
+  if (idempotency.replay) return idempotency.replay;
+  try {
+    const current = await getAchievementRow(env, tenantId, achievementId);
+    if (current.status !== "removed") {
+      const now = nowIso();
+      await env.DB.prepare(
+        `UPDATE trainee_achievements
+            SET status='removed', removed_at=?, updated_at=?
+          WHERE id=? AND tenant_id=? AND status<>'removed'`,
+      ).bind(now, now, achievementId, tenantId).run();
+      await audit(env, tenantId, auth.id, "achievement.removed", "trainee_achievement", achievementId, {
+        previousStatus: current.status,
+        pointsRetained: Number(current.points_snapshot ?? 0),
+      });
+    }
+    const responseBody = { removed: true };
+    await finishIdempotency(env, auth, idempotency.key, 200, responseBody);
+    return json(responseBody);
+  } catch (error) {
+    if (idempotency.reserved) await cancelIdempotency(env, auth, idempotency.key);
+    throw error;
+  }
 }

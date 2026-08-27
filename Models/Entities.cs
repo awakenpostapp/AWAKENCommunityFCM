@@ -422,6 +422,63 @@ public sealed class TraineeEvaluation
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+[Table("AchievementBadges")]
+public sealed class AchievementBadge
+{
+    [PrimaryKey, MaxLength(64)]
+    public string Id { get; set; } = string.Empty;
+
+    [Indexed(Unique = true), MaxLength(80)]
+    public string Key { get; set; } = string.Empty;
+
+    [MaxLength(180)]
+    public string Name { get; set; } = string.Empty;
+
+    public AchievementCategory Category { get; set; }
+    public string AssetKey { get; set; } = string.Empty;
+    public AchievementDisplaySize DisplaySize { get; set; } = AchievementDisplaySize.Medium;
+    public int Points { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+[Table("TraineeAchievements")]
+public sealed class TraineeAchievement
+{
+    [PrimaryKey, MaxLength(64)]
+    public string Id { get; set; } = EntityId.New();
+
+    [Indexed, MaxLength(64)]
+    public string TenantId { get; set; } = string.Empty;
+
+    [Indexed, MaxLength(64)]
+    public string TraineeUserId { get; set; } = string.Empty;
+
+    [Indexed, MaxLength(64)]
+    public string BadgeId { get; set; } = string.Empty;
+
+    [Indexed, MaxLength(64)]
+    public string ClassId { get; set; } = string.Empty;
+
+    public AchievementCategory Category { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string EventName { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public DateTime AwardedForDateUtc { get; set; } = DateTime.UtcNow.Date;
+    public int Points { get; set; }
+    public AchievementStatus Status { get; set; } = AchievementStatus.Pending;
+    public string CreatedByUserId { get; set; } = string.Empty;
+    public string ReviewedByUserId { get; set; } = string.Empty;
+    public DateTime? ReviewedAtUtc { get; set; }
+    public string ReviewNote { get; set; } = string.Empty;
+    public DateTime VisibleUntilUtc { get; set; } = DateTime.UtcNow.AddDays(30);
+    public DateTime? RemovedAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 [Table("AppNotifications")]
 public sealed class AppNotification
 {

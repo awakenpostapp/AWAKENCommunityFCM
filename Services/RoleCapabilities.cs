@@ -42,6 +42,15 @@ public static class RoleCapabilities
     public static bool CanApproveOperations(UserRole? role) =>
         role is UserRole.Founder or UserRole.CoFounder or UserRole.Manager;
 
+    public static bool CanCreateAchievements(UserRole? role) =>
+        role is UserRole.Founder or UserRole.CoFounder or UserRole.Coach;
+
+    public static bool CanReviewAchievements(UserRole? role) =>
+        role is UserRole.Founder or UserRole.CoFounder;
+
+    public static bool CanRemoveAchievements(UserRole? role) =>
+        role == UserRole.Founder;
+
     public static bool CanEditMemberProfile(UserRole? actorRole, UserRole targetRole) =>
         IsFounderLike(actorRole) && targetRole != UserRole.Admin;
 

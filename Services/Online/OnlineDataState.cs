@@ -39,6 +39,13 @@ public sealed class OnlineDataState
     /// of the broad operational snapshot to keep login payloads small.
     /// </summary>
     public List<TraineeEvaluation> TraineeEvaluations { get; } = [];
+    /// <summary>
+    /// Achievement catalog and records are loaded through their dedicated,
+    /// role-scoped endpoints. They intentionally stay out of the broad
+    /// operational snapshot so ordinary login and tab navigation remain fast.
+    /// </summary>
+    public List<AchievementBadge> AchievementBadges { get; } = [];
+    public List<TraineeAchievement> TraineeAchievements { get; } = [];
     public List<AppNotification> Notifications { get; } = [];
     public List<AuditLog> AuditLogs { get; } = [];
 
@@ -117,6 +124,8 @@ public sealed class OnlineDataState
             Receipts.Clear();
             CoachSalaries.Clear();
             TraineeEvaluations.Clear();
+            AchievementBadges.Clear();
+            TraineeAchievements.Clear();
             Notifications.Clear();
             AuditLogs.Clear();
         }

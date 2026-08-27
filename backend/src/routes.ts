@@ -579,6 +579,15 @@ export async function deleteMember(request: Request, env: Env, userId: string): 
     // deleted member's own activity trail.
     env.DB.prepare("DELETE FROM audit_logs WHERE tenant_id=? AND actor_user_id=?")
       .bind(tenantId, target.id),
+    // Achievement records are dedicated, tenant-scoped data. Remove records
+    // authored for or by the deleted member while preserving the shared badge
+    // catalog and all other members' points.
+    env.DB.prepare(
+      "DELETE FROM trainee_achievements WHERE tenant_id=? AND (trainee_user_id=? OR created_by_user_id=?)",
+    ).bind(tenantId, target.id, target.id),
+    env.DB.prepare(
+      "UPDATE trainee_achievements SET reviewed_by_user_id='' WHERE tenant_id=? AND reviewed_by_user_id=?",
+    ).bind(tenantId, target.id),
     env.DB.prepare("DELETE FROM users WHERE id=? AND tenant_id=?")
       .bind(target.id, tenantId),
   ]);

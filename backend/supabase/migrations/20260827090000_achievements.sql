@@ -111,7 +111,7 @@ create policy achievements_scoped_read on public.trainee_achievements
              where cc.tenant_id = trainee_achievements.tenant_id
                and cc.class_id = trainee_achievements.class_id
                and cc.coach_user_id = private.current_app_user_id()
-               and cc.is_active
+               and cc.is_active = 1
           )
         )
       )

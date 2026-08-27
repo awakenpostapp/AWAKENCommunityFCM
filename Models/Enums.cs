@@ -107,6 +107,28 @@ public enum TraineeEvaluationStatus
     Rejected = 2
 }
 
+public enum AchievementCategory
+{
+    MatchRanking = 1,
+    WeeklyClassRanking = 2
+}
+
+public enum AchievementStatus
+{
+    Pending = 0,
+    Approved = 1,
+    Rejected = 2,
+    Removed = 3,
+    Expired = 4
+}
+
+public enum AchievementDisplaySize
+{
+    Hero = 1,
+    Medium = 2,
+    Compact = 3
+}
+
 public enum NotificationKind
 {
     Announcement = 0,
@@ -123,7 +145,10 @@ public enum NotificationKind
     EvaluationSubmitted = 11,
     EvaluationApproved = 12,
     EvaluationRejected = 13,
-    EvaluationClassCompleted = 14
+    EvaluationClassCompleted = 14,
+    AchievementSubmitted = 15,
+    AchievementApproved = 16,
+    AchievementRejected = 17
 }
 
 public static class DomainText
@@ -186,6 +211,21 @@ public static class DomainText
     {
         TraineeEvaluationStatus.Approved => "Đã Founder xác nhận · Không thể sửa",
         TraineeEvaluationStatus.Rejected => "Cần chỉnh sửa và gửi lại",
+        _ => "Chờ Founder xác nhận"
+    };
+
+    public static string AchievementCategory(AchievementCategory category) => category switch
+    {
+        CommunityFootballClubManager.Models.AchievementCategory.WeeklyClassRanking => "Xếp hạng lớp học theo tuần",
+        _ => "Xếp hạng giao hữu / giải đấu"
+    };
+
+    public static string AchievementStatus(AchievementStatus status) => status switch
+    {
+        CommunityFootballClubManager.Models.AchievementStatus.Approved => "Đã xác nhận",
+        CommunityFootballClubManager.Models.AchievementStatus.Rejected => "Đã từ chối",
+        CommunityFootballClubManager.Models.AchievementStatus.Removed => "Đã gỡ",
+        CommunityFootballClubManager.Models.AchievementStatus.Expired => "Hết hạn hiển thị",
         _ => "Chờ Founder xác nhận"
     };
 

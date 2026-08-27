@@ -107,3 +107,81 @@ public sealed class CloudTraineeEvaluationRosterResponse
     public bool EvaluationRequestOpen { get; init; }
     public IReadOnlyList<CloudTraineeEvaluationRosterTrainee> Trainees { get; init; } = [];
 }
+
+public sealed class CloudAchievementBadge
+{
+    public string Id { get; init; } = string.Empty;
+    public string Key { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public AchievementCategory Category { get; init; }
+    public string AssetKey { get; init; } = string.Empty;
+    public AchievementDisplaySize DisplaySize { get; init; } = AchievementDisplaySize.Medium;
+    public int Points { get; init; }
+    public int SortOrder { get; init; }
+    public bool IsActive { get; init; } = true;
+}
+
+public sealed class CloudAchievementSnapshot
+{
+    public string Id { get; init; } = string.Empty;
+    public string TenantId { get; init; } = string.Empty;
+    public string TraineeUserId { get; init; } = string.Empty;
+    public string TraineeName { get; init; } = string.Empty;
+    public string BadgeId { get; init; } = string.Empty;
+    public string BadgeKey { get; init; } = string.Empty;
+    public string BadgeName { get; init; } = string.Empty;
+    public string BadgeAssetKey { get; init; } = string.Empty;
+    public AchievementDisplaySize BadgeDisplaySize { get; init; } = AchievementDisplaySize.Medium;
+    public string ClassId { get; init; } = string.Empty;
+    public string ClassName { get; init; } = string.Empty;
+    public AchievementCategory Category { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string EventName { get; init; } = string.Empty;
+    public string Reason { get; init; } = string.Empty;
+    public DateTimeOffset AwardedForDate { get; init; }
+    public int Points { get; init; }
+    public AchievementStatus Status { get; init; }
+    public string CreatedByUserId { get; init; } = string.Empty;
+    public string CoachName { get; init; } = string.Empty;
+    public string ReviewedByUserId { get; init; } = string.Empty;
+    public DateTimeOffset? ReviewedAt { get; init; }
+    public string ReviewNote { get; init; } = string.Empty;
+    public DateTimeOffset VisibleUntil { get; init; }
+    public DateTimeOffset? RemovedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+}
+
+public sealed class CloudAchievementResponse
+{
+    public CloudAchievementSnapshot? Achievement { get; init; }
+}
+
+public sealed class CloudAchievementListResponse
+{
+    public IReadOnlyList<CloudAchievementSnapshot> Achievements { get; init; } = [];
+    public int TotalPoints { get; init; }
+    public int PendingCount { get; init; }
+}
+
+public sealed class CloudAchievementBadgeListResponse
+{
+    public IReadOnlyList<CloudAchievementBadge> Badges { get; init; } = [];
+}
+
+public sealed record CloudAchievementCreateRequest(
+    string TraineeUserId,
+    string BadgeId,
+    AchievementCategory Category,
+    string? ClassId,
+    string? Title,
+    string? EventName,
+    string? Reason,
+    // The Worker validates this value as a date key (YYYY-MM-DD), not an
+    // ISO timestamp. Keeping the wire DTO as a string prevents DateTime's
+    // default JSON formatter from sending a value the API rejects.
+    string? AwardedForDate);
+
+public sealed record CloudAchievementReviewRequest(
+    bool Approved,
+    string? ReviewNote);

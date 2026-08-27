@@ -1,5 +1,26 @@
 # Change log
 
+He thong thanh tich - 2026-08-27 (giu nguyen build 120)
+
+- Them tab Thanh tich cho Founder, Dong Sang lap, Coach va Cau thu hoc vien;
+  Manager khong co tab vi khong duoc cap nghiep vu thanh tich.
+- Them hai hang muc: Xep hang giao huu/giai dau va Xep hang lop hoc theo tuan.
+  Founder/Dong Sang lap duoc ghi nhan va duyet; Coach chi gui de xuat kem ly do;
+  chi Founder duoc go bieu trung.
+- Them catalog 21 bieu trung dung chung, dung tap diem da duyet trong anh:
+  500, 150, 100, 60, 30, 20, 15, 10, -10, -30. Diem duoc chup tai thoi diem
+  ghi nhan va giu vinh vien; bieu trung hien thi 30 ngay roi chuyen het han,
+  khong lam mat diem.
+- Them migration additive cho Cloudflare D1 va Supabase, RLS/index, API
+  achievement-badges, achievements, duyet va go; mutation co idempotency,
+  kiem tra tenant/quyen, audit va thong bao trong ung dung.
+- Them client/API model va data access online tach khoi operational snapshot,
+  tranh lam cham dang nhap; Android co bo loc, che do danh sach gon, chi tiet,
+  tao de xuat va duyet/go theo quyen.
+- Da kiem tra cuc bo: 55 test Worker, typegen, typecheck, build, Worker
+  dry-run va MAUI compile deu dat. Chua ap dung migration Supabase production
+  hoac deploy Worker trong checkpoint nay.
+
 Production hotfix - 2026-08-26 (giu nguyen build 120)
 
 - Sua loi khong the luu khi sua lop hoac them Cau Thu Hoc Vien online: Supabase

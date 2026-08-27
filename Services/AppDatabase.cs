@@ -231,6 +231,8 @@ public sealed partial class AppDatabase
             await Database.CreateTableAsync<Receipt>();
             await Database.CreateTableAsync<CoachSalary>();
             await Database.CreateTableAsync<TraineeEvaluation>();
+            await Database.CreateTableAsync<AchievementBadge>();
+            await Database.CreateTableAsync<TraineeAchievement>();
             await Database.CreateTableAsync<AppNotification>();
             await Database.CreateTableAsync<AuditLog>();
 
@@ -1921,6 +1923,9 @@ public sealed partial class AppDatabase
             {
                 item.ReviewedByUserId = string.Empty;
             }
+            Online.Remove(Online.TraineeAchievements, item => item.TraineeUserId == targetUserId
+                                                               || item.CreatedByUserId == targetUserId
+                                                               || item.ReviewedByUserId == targetUserId);
             Online.Remove(Online.Users, item => item.Id == targetUserId);
             Online.Remove(Online.Profiles, item => item.UserId == targetUserId);
             Online.Remove(Online.ClassCoaches, item => item.CoachUserId == targetUserId);
@@ -1995,6 +2000,8 @@ public sealed partial class AppDatabase
             connection.Execute("UPDATE CoachSalaries SET PaidByUserId = '' WHERE PaidByUserId = ?", target.Id);
             connection.Execute("DELETE FROM TraineeEvaluations WHERE TraineeUserId = ? OR CoachUserId = ?", target.Id, target.Id);
             connection.Execute("UPDATE TraineeEvaluations SET ReviewedByUserId = '' WHERE ReviewedByUserId = ?", target.Id);
+            connection.Execute("DELETE FROM TraineeAchievements WHERE TraineeUserId = ? OR CreatedByUserId = ?", target.Id, target.Id);
+            connection.Execute("UPDATE TraineeAchievements SET ReviewedByUserId = '' WHERE ReviewedByUserId = ?", target.Id);
             connection.Execute("DELETE FROM AppNotifications WHERE RecipientUserId = ?", target.Id);
             connection.Execute("DELETE FROM ExternalAccountLinks WHERE UserId = ?", target.Id);
             connection.Execute("DELETE FROM PersonProfiles WHERE UserId = ?", target.Id);
@@ -9000,6 +9007,7 @@ public sealed partial class AppDatabase
             connection.Execute("DELETE FROM Receipts");
             connection.Execute("DELETE FROM CoachSalaries");
             connection.Execute("DELETE FROM TraineeEvaluations");
+            connection.Execute("DELETE FROM TraineeAchievements");
             connection.Execute("DELETE FROM AppNotifications");
             connection.Execute("DELETE FROM AuditLogs");
 

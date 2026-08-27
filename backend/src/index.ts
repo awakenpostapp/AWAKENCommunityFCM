@@ -52,10 +52,10 @@ import {
 import {
   achievementBadges,
   achievements,
+  expireAchievements,
   removeAchievement,
   reviewAchievement,
 } from "./achievement-routes";
-import { expireAchievements } from "./achievement-routes";
 import { cleanupExpiredSecurityRows, markMissedCoachCheckInsForAllTenants } from "./snapshot";
 import { supabaseHealth } from "./supabase";
 import { databaseForRequest } from "./supabase-d1";

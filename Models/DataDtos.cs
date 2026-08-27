@@ -131,6 +131,31 @@ public sealed record TraineeEvaluationRosterRow(
     double HeightCm,
     double WeightKg);
 
+/// <summary>
+/// A role-scoped achievement row returned by the dedicated achievements API.
+/// The achievement keeps its immutable points snapshot even after its
+/// 30-day presentation window expires or a Founder removes it.
+/// </summary>
+public sealed record AchievementRow(
+    TraineeAchievement Achievement,
+    AchievementBadge Badge,
+    string TraineeName,
+    string ClassName,
+    string CreatorName)
+{
+    public bool IsVisibleNow => Achievement.Status == AchievementStatus.Approved
+                                && Achievement.VisibleUntilUtc >= DateTime.UtcNow;
+
+    public bool RetainsPoints => Achievement.Status is AchievementStatus.Approved
+        or AchievementStatus.Removed
+        or AchievementStatus.Expired;
+}
+
+public sealed record AchievementFeed(
+    IReadOnlyList<AchievementRow> Achievements,
+    int TotalPoints,
+    int PendingCount);
+
 public sealed record DashboardMetrics(
     int ActiveClasses,
     int ActiveCoaches,

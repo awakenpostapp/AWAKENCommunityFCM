@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CommunityFootballClubManager.Models;
 
 namespace CommunityFootballClubManager.Services.Online;
 
@@ -221,6 +222,85 @@ public sealed class CloudApiClient
             allowRefresh: true,
             idempotencyKey: idempotencyKey,
             cancellationToken: cancellationToken);
+
+    public Task<CloudAchievementBadgeListResponse> GetAchievementBadgesAsync(
+        AchievementCategory? category = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = "achievement-badges";
+        if (category is not null)
+        {
+            path += $"?category={Uri.EscapeDataString(ToAchievementCategoryKey(category.Value))}";
+        }
+
+        return GetAsync<CloudAchievementBadgeListResponse>(path, cancellationToken);
+    }
+
+    public Task<CloudAchievementListResponse> GetAchievementsAsync(
+        string? traineeUserId = null,
+        string? classId = null,
+        AchievementCategory? category = null,
+        AchievementStatus? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(traineeUserId))
+            query.Add($"traineeUserId={Uri.EscapeDataString(traineeUserId)}");
+        if (!string.IsNullOrWhiteSpace(classId))
+            query.Add($"classId={Uri.EscapeDataString(classId)}");
+        if (category is not null)
+            query.Add($"category={Uri.EscapeDataString(ToAchievementCategoryKey(category.Value))}");
+        if (status is not null)
+            query.Add($"status={Uri.EscapeDataString(ToAchievementStatusKey(status.Value))}");
+
+        var path = "achievements" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query));
+        return GetAsync<CloudAchievementListResponse>(path, cancellationToken);
+    }
+
+    public Task<CloudAchievementResponse> CreateAchievementAsync(
+        CloudAchievementCreateRequest request,
+        CancellationToken cancellationToken = default) =>
+        PostAsync<CloudAchievementCreateRequest, CloudAchievementResponse>(
+            "achievements",
+            // JsonStringEnumConverter serializes Category as the snake_case
+            // key expected by the Worker.
+            request,
+            idempotencyKey: Guid.NewGuid().ToString("N"),
+            cancellationToken: cancellationToken);
+
+    public Task<CloudAchievementResponse> ReviewAchievementAsync(
+        string achievementId,
+        bool approved,
+        string? note = null,
+        CancellationToken cancellationToken = default) =>
+        PatchAsync<object, CloudAchievementResponse>(
+            $"achievements/{Uri.EscapeDataString(achievementId)}/review",
+            new { approved, note = note?.Trim() ?? string.Empty },
+            idempotencyKey: Guid.NewGuid().ToString("N"),
+            cancellationToken: cancellationToken);
+
+    public Task RemoveAchievementAsync(
+        string achievementId,
+        CancellationToken cancellationToken = default) =>
+        DeleteAsync(
+            $"achievements/{Uri.EscapeDataString(achievementId)}",
+            idempotencyKey: Guid.NewGuid().ToString("N"),
+            cancellationToken: cancellationToken);
+
+    private static string ToAchievementCategoryKey(AchievementCategory category) => category switch
+    {
+        AchievementCategory.WeeklyClassRanking => "weekly_class_ranking",
+        _ => "match_ranking"
+    };
+
+    private static string ToAchievementStatusKey(AchievementStatus status) => status switch
+    {
+        AchievementStatus.Approved => "approved",
+        AchievementStatus.Rejected => "rejected",
+        AchievementStatus.Removed => "removed",
+        AchievementStatus.Expired => "expired",
+        _ => "pending"
+    };
 
     public Task<TResponse> GetAsync<TResponse>(
         string relativePath,

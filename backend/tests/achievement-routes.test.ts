@@ -20,6 +20,8 @@ test("achievement route enforces the approval and expiry lifecycle", () => {
   assert.match(routes, /status: AchievementStatus = auth\.role === "coach" \? "pending" : "approved"/);
   assert.match(routes, /assertCanReviewAchievement\(auth\.role\)/);
   assert.match(routes, /assertCanRemoveAchievement\(auth\.role\)/);
+  assert.match(routes, /reserveIdempotency\(request, env, auth, tenantId\)/);
+  assert.match(routes, /finishIdempotency\(env, auth, idempotency\.key, 200/);
   assert.match(routes, /status='expired'/);
   assert.match(routes, /30 \* DAY_MS/);
   assert.match(routes, /points_snapshot/);
@@ -30,4 +32,12 @@ test("Coach proposals require a reason and class access", () => {
   assert.match(routes, /Coach phải chọn lớp học được phân công/);
   assert.match(routes, /class_coaches/);
   assert.match(routes, /class_enrollments/);
+});
+
+test("member hard-delete cleans achievement rows without touching the shared catalog", async () => {
+  const memberRoutes = await readFile(new URL("../src/routes.ts", import.meta.url), "utf8");
+  assert.match(memberRoutes, /DELETE FROM trainee_achievements/);
+  assert.match(memberRoutes, /created_by_user_id/);
+  assert.match(memberRoutes, /UPDATE trainee_achievements SET reviewed_by_user_id=''/);
+  assert.doesNotMatch(memberRoutes, /DELETE FROM achievement_badges/);
 });
