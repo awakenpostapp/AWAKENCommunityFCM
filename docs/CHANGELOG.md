@@ -1,5 +1,19 @@
 # Change log
 
+## Production rollout — 2026-08-27 (build 121)
+
+- Đã áp dụng migration Supabase production `achievements` (remote version
+  `20260827155057`), tạo 21 biểu trưng và 10 mức điểm; đã xác minh RLS bật
+  cho các bảng thành tích.
+- Đã deploy Worker production bằng `--keep-vars`, giữ nguyên D1, R2, secrets
+  và biến production. Worker version: `191fb70d-a144-4b8f-b377-527c2d0d9aac`.
+  `/health` và `/health/supabase` đều trả HTTP 200.
+- Tăng Android build từ 120 lên 121, giữ version hiển thị 3.4. Đã tạo
+  Release APK, Release AAB và Debug APK; chỉ Release APK được publish lên
+  GitHub Release.
+- Kiểm tra đạt: backend check/typecheck/build, Worker dry-run/smoke và cả ba
+  MAUI Android publish.
+
 ## Hệ thống thành tích — 2026-08-27 (build unchanged: 120)
 
 - Thêm tab **Thành tích** cho Founder, Đồng Sáng lập, Coach và Cầu thủ học

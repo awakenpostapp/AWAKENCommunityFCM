@@ -1,5 +1,19 @@
 # Change log
 
+Production rollout - 2026-08-27 (build 121)
+
+- Da ap dung migration Supabase production achievements (remote version
+  20260827155057), tao 21 bieu trung va 10 muc diem; da xac minh RLS bat
+  cho cac bang thanh tich.
+- Da deploy Worker production bang --keep-vars, giu nguyen D1, R2, secrets
+  va bien production. Worker version: 191fb70d-a144-4b8f-b377-527c2d0d9aac.
+  /health va /health/supabase deu tra HTTP 200.
+- Tang Android build tu 120 len 121, giu version hien thi 3.4. Da tao
+  Release APK, Release AAB va Debug APK; chi Release APK duoc publish len
+  GitHub Release.
+- Kiem tra dat: backend check/typecheck/build, Worker dry-run/smoke va ca ba
+  MAUI Android publish.
+
 He thong thanh tich - 2026-08-27 (giu nguyen build 120)
 
 - Them tab Thanh tich cho Founder, Dong Sang lap, Coach va Cau thu hoc vien;
