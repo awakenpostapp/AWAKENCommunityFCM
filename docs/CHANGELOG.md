@@ -1,5 +1,20 @@
 # Change log
 
+## Achievement UI hotfix — 2026-08-27 (build 122)
+
+- Sửa lỗi trang **Thành tích** hiển thị “Không thể tải dữ liệu” khi trang
+  được render lại (đổi hạng mục, đổi chế độ danh sách gọn hoặc tải lại sau
+  khi thao tác). Nguyên nhân là cùng một `Switch` bị gắn lại vào nhiều `Grid`
+  trong MAUI; trang hiện tạo control mới cho mỗi lần render và chỉ giữ lại
+  trạng thái lựa chọn.
+- Đã xác minh backend online không phải nguyên nhân: Worker production trả
+  HTTP 200 với 21 biểu trưng và feed rỗng hợp lệ cho Founder, Coach và Trainee;
+  DTO JSON của Android deserialize thành công.
+- Tăng Android build từ 121 lên 122, giữ version hiển thị 3.4; artifact được
+  đặt tên riêng, không ghi đè các bản trước.
+- Kiểm tra đạt: 56 test Worker, typecheck, Worker build và MAUI Android Debug
+  build không cảnh báo/lỗi.
+
 ## Production rollout — 2026-08-27 (build 121)
 
 - Đã áp dụng migration Supabase production `achievements` (remote version

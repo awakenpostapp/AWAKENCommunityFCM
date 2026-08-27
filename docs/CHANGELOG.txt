@@ -1,5 +1,19 @@
 # Change log
 
+Achievement UI hotfix - 2026-08-27 (build 122)
+
+- Sua loi trang Thanh tich hien thi “Khong the tai du lieu” khi trang duoc
+  render lai (doi hang muc, doi che do danh sach gon hoac tai lai sau thao tac).
+  Nguyen nhan la cung mot Switch bi gan lai vao nhieu Grid trong MAUI; trang
+  hien tao control moi cho moi lan render va chi giu lai trang thai lua chon.
+- Da xac minh backend online khong phai nguyen nhan: Worker production tra
+  HTTP 200 voi 21 bieu trung va feed rong hop le cho Founder, Coach va Trainee;
+  DTO JSON cua Android deserialize thanh cong.
+- Tang Android build tu 121 len 122, giu version hien thi 3.4; artifact duoc
+  dat ten rieng, khong ghi de cac ban truoc.
+- Kiem tra dat: 56 test Worker, typecheck, Worker build va MAUI Android Debug
+  build khong canh bao/loi.
+
 Production rollout - 2026-08-27 (build 121)
 
 - Da ap dung migration Supabase production achievements (remote version

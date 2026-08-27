@@ -13,10 +13,10 @@ public sealed class AchievementHubPage : AsyncContentPage
 {
     private readonly AppDatabase _database;
     private readonly Picker _categoryPicker = new() { Title = "Hạng mục" };
-    private readonly Switch _compactMode = new() { IsToggled = false, HorizontalOptions = LayoutOptions.End };
     private readonly VerticalStackLayout _list = new() { Spacing = UiKit.SectionSpacing };
     private AchievementFeed _feed = new([], 0, 0);
     private IReadOnlyList<AchievementBadge> _badges = [];
+    private bool _compactModeEnabled;
     private bool _rendering;
 
     public AchievementHubPage(AppDatabase database, SessionService session)
@@ -31,7 +31,6 @@ public sealed class AchievementHubPage : AsyncContentPage
         };
         _categoryPicker.SelectedIndex = 0;
         _categoryPicker.SelectedIndexChanged += (_, _) => Render();
-        _compactMode.Toggled += (_, _) => Render();
         Content = UiKit.ScrollBody(_categoryPicker, _list);
     }
 
@@ -101,6 +100,24 @@ public sealed class AchievementHubPage : AsyncContentPage
             summary.Children.Add(summaryActions);
             _list.Children.Add(UiKit.Card(summary));
 
+            // Render can run more than once (for example after changing the
+            // category, toggling compact mode or refreshing after an action).
+            // Create a fresh switch each time instead of re-parenting a shared
+            // VisualElement, which makes MAUI throw and surface as the generic
+            // "Không thể tải dữ liệu" state on Android.
+            var compactMode = new Switch
+            {
+                IsToggled = _compactModeEnabled,
+                HorizontalOptions = LayoutOptions.End
+            };
+            compactMode.Toggled += (_, args) =>
+            {
+                if (_compactModeEnabled == args.Value)
+                    return;
+
+                _compactModeEnabled = args.Value;
+                Render();
+            };
             var displayMode = new Grid
             {
                 ColumnDefinitions =
@@ -112,10 +129,10 @@ public sealed class AchievementHubPage : AsyncContentPage
                 Children =
                 {
                     UiKit.Caption("Hiển thị dạng danh sách gọn", UiKit.TextSecondary),
-                    _compactMode
+                    compactMode
                 }
             };
-            Grid.SetColumn(_compactMode, 1);
+            Grid.SetColumn(compactMode, 1);
             _list.Children.Add(displayMode);
 
             if (RoleCapabilities.CanCreateAchievements(role))
@@ -162,7 +179,7 @@ public sealed class AchievementHubPage : AsyncContentPage
                 _list.Children.Add(UiKit.Title("Chờ Founder xác nhận"));
                 foreach (var row in pendingRows)
                 {
-                    _list.Children.Add(_compactMode.IsToggled
+                    _list.Children.Add(_compactModeEnabled
                         ? BuildCompactAchievementCard(row, role)
                         : BuildAchievementCard(row, role));
                 }
@@ -174,7 +191,7 @@ public sealed class AchievementHubPage : AsyncContentPage
                     role == UserRole.Trainee ? "Biểu trưng đã nhận" : "Lịch sử thành tích"));
                 foreach (var row in historyRows)
                 {
-                    _list.Children.Add(_compactMode.IsToggled
+                    _list.Children.Add(_compactModeEnabled
                         ? BuildCompactAchievementCard(row, role)
                         : BuildAchievementCard(row, role));
                 }
