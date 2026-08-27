@@ -49,6 +49,13 @@ import {
   updateProfile,
   uploads,
 } from "./routes";
+import {
+  achievementBadges,
+  achievements,
+  removeAchievement,
+  reviewAchievement,
+} from "./achievement-routes";
+import { expireAchievements } from "./achievement-routes";
 import { cleanupExpiredSecurityRows, markMissedCoachCheckInsForAllTenants } from "./snapshot";
 import { supabaseHealth } from "./supabase";
 import { databaseForRequest } from "./supabase-d1";
@@ -132,6 +139,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   params = match(path, /^\/v1\/classes\/([^/]+)\/evaluation-request$/u);
   if (method === "PATCH" && params) return evaluationRequest(request, env, params[0]!);
 
+  if (method === "GET" && path === "/v1/achievement-badges") return achievementBadges(request, env);
+  if ((method === "GET" || method === "POST") && path === "/v1/achievements") return achievements(request, env);
+  params = match(path, /^\/v1\/achievements\/([^/]+)\/review$/u);
+  if (method === "PATCH" && params) return reviewAchievement(request, env, params[0]!);
+  params = match(path, /^\/v1\/achievements\/([^/]+)$/u);
+  if (method === "DELETE" && params) return removeAchievement(request, env, params[0]!);
+
   if ((method === "GET" || method === "POST") && path === "/v1/tuition/invoices") return tuition(request, env);
   params = match(path, /^\/v1\/tuition\/invoices\/([^/]+)\/proofs$/u);
   if (method === "POST" && params) return submitProof(request, env, params[0]!);
@@ -204,5 +218,6 @@ export default {
     const requestEnv = databaseForRequest(env);
     await cleanupExpiredSecurityRows(requestEnv);
     await markMissedCoachCheckInsForAllTenants(requestEnv);
+    await expireAchievements(requestEnv);
   },
 } satisfies ExportedHandler<Env>;

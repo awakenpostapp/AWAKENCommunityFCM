@@ -9,7 +9,7 @@ create table if not exists public.achievement_badges (
   display_size text not null default 'medium' check (display_size in ('hero', 'medium', 'compact')),
   points integer not null check (points in (500, 150, 100, 60, 30, 20, 15, 10, -10, -30)),
   sort_order integer not null default 0,
-  is_active boolean not null default true,
+  is_active integer not null default 1 check (is_active in (0, 1)),
   created_at timestamptz not null,
   updated_at timestamptz not null
 );
@@ -51,27 +51,27 @@ create index if not exists idx_achievements_creator
 insert into public.achievement_badges
   (id, key, name, category, asset_key, display_size, points, sort_order, is_active, created_at, updated_at)
 values
-  ('badge_cup_ngoai_hang', 'cup_ngoai_hang', 'Cup Ngoại Hạng', 'match_ranking', 'achievement/cup_ngoai_hang', 'hero', 500, 10, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_cup_hang_1', 'cup_hang_1', 'Cup Hạng 1', 'match_ranking', 'achievement/cup_hang_1', 'hero', 150, 20, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_cup_hang_2', 'cup_hang_2', 'Cup Hạng 2', 'match_ranking', 'achievement/cup_hang_2', 'hero', 100, 30, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_cup_hang_3', 'cup_hang_3', 'Cup Hạng 3', 'match_ranking', 'achievement/cup_hang_3', 'hero', 60, 40, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_huy_chuong_vang', 'huy_chuong_vang', 'Huy Chương Vàng', 'match_ranking', 'achievement/huy_chuong_vang', 'hero', 150, 50, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_huy_chuong_bac', 'huy_chuong_bac', 'Huy Chương Bạc', 'match_ranking', 'achievement/huy_chuong_bac', 'hero', 100, 60, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_huy_chuong_dong', 'huy_chuong_dong', 'Huy Chương Đồng', 'match_ranking', 'achievement/huy_chuong_dong', 'hero', 60, 70, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_gang_tay_vang', 'gang_tay_vang', 'Găng Tay Vàng', 'match_ranking', 'achievement/gang_tay_vang', 'hero', 100, 80, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_qua_bong_vang', 'qua_bong_vang', 'Quả Bóng Vàng', 'match_ranking', 'achievement/qua_bong_vang', 'hero', 100, 90, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_cau_thu_xuat_sac', 'cau_thu_xuat_sac', 'Cầu Thủ Xuất Sắc', 'match_ranking', 'achievement/cau_thu_xuat_sac', 'hero', 100, 100, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_vong_nguyet_que', 'vong_nguyet_que', 'Vòng Nguyệt Quế', 'match_ranking', 'achievement/vong_nguyet_que', 'hero', 60, 110, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_the_vang', 'the_vang', 'Thẻ Vàng', 'match_ranking', 'achievement/the_vang', 'compact', -10, 120, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_the_do', 'the_do', 'Thẻ Đỏ', 'match_ranking', 'achievement/the_do', 'compact', -30, 130, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_tham_gia', 'tham_gia', 'Tham Gia', 'weekly_class_ranking', 'achievement/tham_gia', 'medium', 10, 200, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_tich_cuc', 'tich_cuc', 'Tích Cực', 'weekly_class_ranking', 'achievement/tich_cuc', 'medium', 15, 210, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_ghi_ban', 'ghi_ban', 'Ghi Bàn', 'weekly_class_ranking', 'achievement/ghi_ban', 'medium', 15, 220, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_giu_sach_luoi', 'giu_sach_luoi', 'Giữ Sạch Lưới', 'weekly_class_ranking', 'achievement/giu_sach_luoi', 'medium', 20, 230, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_fair_play', 'fair_play', 'Fair Play', 'weekly_class_ranking', 'achievement/fair_play', 'medium', 10, 240, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_tinh_than_tot', 'tinh_than_tot', 'Tinh Thần Tốt', 'weekly_class_ranking', 'achievement/tinh_than_tot', 'medium', 10, 250, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_tien_bo', 'tien_bo', 'Tiến Bộ', 'weekly_class_ranking', 'achievement/tien_bo', 'medium', 20, 260, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
-  ('badge_no_luc_xuat_sac', 'no_luc_xuat_sac', 'Nỗ Lực Xuất Sắc', 'weekly_class_ranking', 'achievement/no_luc_xuat_sac', 'medium', 30, 270, true, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z')
+  ('badge_cup_ngoai_hang', 'cup_ngoai_hang', 'Cup Ngoại Hạng', 'match_ranking', 'achievement/cup_ngoai_hang', 'hero', 500, 10, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_cup_hang_1', 'cup_hang_1', 'Cup Hạng 1', 'match_ranking', 'achievement/cup_hang_1', 'hero', 150, 20, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_cup_hang_2', 'cup_hang_2', 'Cup Hạng 2', 'match_ranking', 'achievement/cup_hang_2', 'hero', 100, 30, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_cup_hang_3', 'cup_hang_3', 'Cup Hạng 3', 'match_ranking', 'achievement/cup_hang_3', 'hero', 60, 40, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_huy_chuong_vang', 'huy_chuong_vang', 'Huy Chương Vàng', 'match_ranking', 'achievement/huy_chuong_vang', 'hero', 150, 50, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_huy_chuong_bac', 'huy_chuong_bac', 'Huy Chương Bạc', 'match_ranking', 'achievement/huy_chuong_bac', 'hero', 100, 60, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_huy_chuong_dong', 'huy_chuong_dong', 'Huy Chương Đồng', 'match_ranking', 'achievement/huy_chuong_dong', 'hero', 60, 70, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_gang_tay_vang', 'gang_tay_vang', 'Găng Tay Vàng', 'match_ranking', 'achievement/gang_tay_vang', 'hero', 100, 80, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_qua_bong_vang', 'qua_bong_vang', 'Quả Bóng Vàng', 'match_ranking', 'achievement/qua_bong_vang', 'hero', 100, 90, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_cau_thu_xuat_sac', 'cau_thu_xuat_sac', 'Cầu Thủ Xuất Sắc', 'match_ranking', 'achievement/cau_thu_xuat_sac', 'hero', 100, 100, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_vong_nguyet_que', 'vong_nguyet_que', 'Vòng Nguyệt Quế', 'match_ranking', 'achievement/vong_nguyet_que', 'hero', 60, 110, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_the_vang', 'the_vang', 'Thẻ Vàng', 'match_ranking', 'achievement/the_vang', 'compact', -10, 120, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_the_do', 'the_do', 'Thẻ Đỏ', 'match_ranking', 'achievement/the_do', 'compact', -30, 130, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_tham_gia', 'tham_gia', 'Tham Gia', 'weekly_class_ranking', 'achievement/tham_gia', 'medium', 10, 200, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_tich_cuc', 'tich_cuc', 'Tích Cực', 'weekly_class_ranking', 'achievement/tich_cuc', 'medium', 15, 210, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_ghi_ban', 'ghi_ban', 'Ghi Bàn', 'weekly_class_ranking', 'achievement/ghi_ban', 'medium', 15, 220, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_giu_sach_luoi', 'giu_sach_luoi', 'Giữ Sạch Lưới', 'weekly_class_ranking', 'achievement/giu_sach_luoi', 'medium', 20, 230, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_fair_play', 'fair_play', 'Fair Play', 'weekly_class_ranking', 'achievement/fair_play', 'medium', 10, 240, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_tinh_than_tot', 'tinh_than_tot', 'Tinh Thần Tốt', 'weekly_class_ranking', 'achievement/tinh_than_tot', 'medium', 10, 250, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_tien_bo', 'tien_bo', 'Tiến Bộ', 'weekly_class_ranking', 'achievement/tien_bo', 'medium', 20, 260, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z'),
+  ('badge_no_luc_xuat_sac', 'no_luc_xuat_sac', 'Nỗ Lực Xuất Sắc', 'weekly_class_ranking', 'achievement/no_luc_xuat_sac', 'medium', 30, 270, 1, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z')
 on conflict (key) do nothing;
 
 alter table public.achievement_badges enable row level security;
@@ -87,7 +87,7 @@ grant all on public.trainee_achievements to service_role;
 drop policy if exists achievement_badges_active_read on public.achievement_badges;
 create policy achievement_badges_active_read on public.achievement_badges
   for select to authenticated
-  using (is_active);
+  using (is_active = 1);
 
 drop policy if exists achievements_scoped_read on public.trainee_achievements;
 create policy achievements_scoped_read on public.trainee_achievements
