@@ -6,6 +6,9 @@ import {
   canChangeAccountStatus,
   canDeleteTarget,
   canEditMemberProfile,
+  canCreateAchievement,
+  canReviewAchievement,
+  canRemoveAchievement,
 } from "./authorization.ts";
 
 /**
@@ -60,5 +63,23 @@ export function assertCanChangeAccountStatus(actorRole: UserRole, targetRole: Us
 export function assertCanDeleteTarget(actorRole: UserRole, targetRole: UserRole): void {
   if (!canDeleteTarget(actorRole, targetRole)) {
     throw new AuthorizationError(403, "forbidden_account_delete", "Role hiện tại không được xóa account này.");
+  }
+}
+
+export function assertCanCreateAchievement(actorRole: UserRole): void {
+  if (!canCreateAchievement(actorRole)) {
+    throw new AuthorizationError(403, "forbidden_achievement_create", "Role hiện tại không được thêm thành tích.");
+  }
+}
+
+export function assertCanReviewAchievement(actorRole: UserRole): void {
+  if (!canReviewAchievement(actorRole)) {
+    throw new AuthorizationError(403, "forbidden_achievement_review", "Chỉ Founder hoặc Đồng Sáng Lập được duyệt thành tích.");
+  }
+}
+
+export function assertCanRemoveAchievement(actorRole: UserRole): void {
+  if (!canRemoveAchievement(actorRole)) {
+    throw new AuthorizationError(403, "forbidden_achievement_remove", "Chỉ Founder được gỡ hoặc xóa thành tích.");
   }
 }

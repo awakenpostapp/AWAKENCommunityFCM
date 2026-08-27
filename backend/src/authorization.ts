@@ -41,6 +41,21 @@ export function canCreateClass(role: UserRole): boolean {
   return isFounderLike(role);
 }
 
+/** Achievement proposals may be authored by Founder/Co-Founder or Coach. */
+export function canCreateAchievement(role: UserRole): boolean {
+  return isFounderLike(role) || role === "coach";
+}
+
+/** Only the Founder hierarchy can approve or reject a proposal. */
+export function canReviewAchievement(role: UserRole): boolean {
+  return isFounderLike(role);
+}
+
+/** Permanent removal is reserved for the top-level Founder account. */
+export function canRemoveAchievement(role: UserRole): boolean {
+  return role === "founder";
+}
+
 /**
  * Tenant members may inspect classes they belong to or manage.  Keep this
  * read capability separate from attendance-write capability so Managers can
