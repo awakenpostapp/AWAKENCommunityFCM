@@ -1,5 +1,16 @@
 # Change log
 
+Release 3.4 - build 124 - 2026-08-28
+
+- Tang Android ApplicationVersion tu 123 len 124, giu version hien thi 3.4
+  va giu nguyen ApplicationId, database, Cloudflare, Supabase, R2 va OAuth.
+- Da tao Release APK, Release AAB va Debug APK bang keystore production;
+  apksigner xac nhan Release APK hop le voi v1, v2 va v3. Chi Release APK
+  duoc upload len GitHub Release v3.4-build124; AAB/Debug giu local.
+- Build nay dong goi toan bo thay doi thanh tich va 21 PNG nen trong suot da
+  duoc kiem tra o build truoc. Khong co migration hoac thay doi du lieu
+  backend trong lan phat hanh nay.
+
 Achievement assets and per-trainee history - 2026-08-28 (giu nguyen build 123)
 
 - Thay toan bo 21 asset bieu trung bang cac file PNG rieng do nguoi dung cung

@@ -1,5 +1,16 @@
 # Change log
 
+## Release 3.4 — build 124 — 2026-08-28
+
+- Tăng Android `ApplicationVersion` từ 123 lên 124, giữ version hiển thị 3.4
+  và giữ nguyên ApplicationId, database, Cloudflare, Supabase, R2 và OAuth.
+- Đã tạo Release APK, Release AAB và Debug APK bằng keystore production;
+  `apksigner` xác nhận Release APK hợp lệ với v1, v2 và v3. Chỉ Release APK
+  được upload lên GitHub Release `v3.4-build124`; AAB/Debug giữ local.
+- Build này đóng gói toàn bộ thay đổi thành tích và 21 PNG nền trong suốt đã
+  được kiểm tra ở build trước. Không có migration hoặc thay đổi dữ liệu
+  backend trong lần phát hành này.
+
 ## Achievement assets and per-trainee history — 2026-08-28 (build unchanged: 123)
 
 - Thay toàn bộ 21 asset biểu trưng bằng các file PNG riêng do người dùng cung
