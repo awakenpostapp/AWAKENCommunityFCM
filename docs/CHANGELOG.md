@@ -1,5 +1,26 @@
 # Change log
 
+## Achievement assets and per-trainee history — 2026-08-28 (build unchanged: 123)
+
+- Thay toàn bộ 21 asset biểu trưng bằng các file PNG riêng do người dùng cung
+  cấp. Nền đen và phần chữ chú thích được tách thành trong suốt bằng script
+  tái lập được; ảnh biểu trưng bên trong được giữ nguyên và catalog/điểm đã
+  duyệt không thay đổi.
+- Trang **Thành tích** của Founder, Đồng Sáng Lập và Coach không còn hiển thị
+  “Tổng điểm trong phạm vi”. Trang này trước tiên liệt kê theo tên những Cầu
+  thủ học viên đã có thành tích; chạm vào tên mới mở lịch sử riêng của học
+  viên. Tổng điểm cá nhân vẫn được lấy từ snapshot từng thành tích và hiển
+  thị trong hồ sơ Trainee (cả hồ sơ do Founder mở và **Thông tin cá nhân** của
+  chính Trainee).
+- Giữ biểu trưng theo từng Trainee trong danh sách thành viên và danh sách
+  lớp học; không gộp điểm giữa các học viên. Các bản ghi đã hết hạn/gỡ vẫn
+  giữ điểm và lịch sử, còn Trainee chưa có thành tích không xuất hiện trong
+  chỉ mục Thành tích.
+- Sửa Picker **Lớp học** ở màn hình **Thêm thành tích**: binding dùng
+  `ClassRow.DisplayName` nên tên lớp được hiển thị đúng cho Founder/Coach.
+- Đã kiểm tra 62 test backend/UI, Worker typecheck/build và MAUI Android Debug
+  build; không thay đổi schema hay migration backend trong checkpoint này.
+
 ## Achievement UI hotfix — 2026-08-27 (build 122)
 
 - Sửa lỗi trang **Thành tích** hiển thị “Không thể tải dữ liệu” khi trang

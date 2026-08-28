@@ -21,6 +21,9 @@ public sealed record ClassRow(
     IReadOnlyList<MemberRow> Trainees,
     MemberRow? Manager = null)
 {
+    /// <summary>Flat display property for Picker/list bindings.</summary>
+    public string DisplayName => Class.Name;
+
     public string ScheduleText =>
         $"{DomainText.Weekdays(Class.ScheduleDays)} · {DomainText.TimeRange(Class.StartTimeMinutes, Class.EndTimeMinutes)}";
     public string CoachNames => Coaches.Count == 0

@@ -524,6 +524,52 @@ public sealed class MemberProfilePage : AsyncContentPage
             }
         };
 
+        TraineeAchievementSummary? achievementSummary = null;
+        if (member.Account.Role == UserRole.Trainee
+            && (Session.CurrentUser?.Role is UserRole.Founder
+                or UserRole.CoFounder
+                or UserRole.Coach
+                or UserRole.Trainee))
+        {
+            try
+            {
+                var achievementFeed = await _database.GetAchievementsAsync(
+                    CurrentUserId,
+                    member.Account.Id);
+                achievementSummary = AchievementBadgeUi.Summarize(
+                        achievementFeed,
+                        member.Account.Id)
+                    .GetValueOrDefault(member.Account.Id)
+                    ?? AchievementBadgeUi.EmptySummary();
+            }
+            catch (Exception exception)
+            {
+                // Achievement data is supplemental to a profile. An older
+                // Worker or a restricted Coach scope must not block the rest
+                // of the profile from rendering.
+                System.Diagnostics.Debug.WriteLine(
+                    $"Không thể tải thành tích trong hồ sơ: {exception.Message}");
+            }
+        }
+
+        if (achievementSummary is not null)
+        {
+            var points = achievementSummary.TotalPoints >= 0
+                ? $"{achievementSummary.TotalPoints:+#;-#;0} điểm"
+                : $"{achievementSummary.TotalPoints} điểm";
+            root.Children.Add(UiKit.Card(new VerticalStackLayout
+            {
+                Spacing = 6,
+                Children =
+                {
+                    UiKit.Headline("Thành tích"),
+                    UiKit.Caption("Điểm cá nhân tích lũy", UiKit.TextSecondary),
+                    UiKit.LargeTitle(points),
+                    AchievementBadgeUi.SummaryView(achievementSummary)
+                }
+            }));
+        }
+
         if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
             && member.Account.Role == UserRole.Trainee
             && Application.Current?.Handler?.MauiContext?.Services is { } cardServices

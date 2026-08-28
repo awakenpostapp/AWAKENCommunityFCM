@@ -1,5 +1,26 @@
 # Change log
 
+Achievement assets and per-trainee history - 2026-08-28 (giu nguyen build 123)
+
+- Thay toan bo 21 asset bieu trung bang cac file PNG rieng do nguoi dung cung
+  cap. Nen den va phan chu chu thich duoc tach thanh trong suot bang script
+  tai lap duoc; anh bieu trung ben trong duoc giu nguyen va catalog/diem da
+  duyet khong thay doi.
+- Trang Thanh tich cua Founder, Dong Sang Lap va Coach khong con hien thi
+  “Tong diem trong pham vi”. Trang nay truoc tien liet ke theo ten nhung Cau
+  thu hoc vien da co thanh tich; cham vao ten moi mo lich su rieng cua hoc
+  vien. Tong diem ca nhan van lay tu snapshot tung thanh tich va hien thi
+  trong ho so Trainee (ca ho so do Founder mo va Thong tin ca nhan cua chinh
+  Trainee).
+- Giu bieu trung theo tung Trainee trong danh sach thanh vien va danh sach
+  lop hoc; khong gop diem giua cac hoc vien. Cac ban ghi da het han/go van
+  giu diem va lich su, con Trainee chua co thanh tich khong xuat hien trong
+  chi muc Thanh tich.
+- Sua Picker Lop hoc o man hinh Them thanh tich: binding dung
+  ClassRow.DisplayName nen ten lop duoc hien thi dung cho Founder/Coach.
+- Da kiem tra 62 test backend/UI, Worker typecheck/build va MAUI Android Debug
+  build; khong thay doi schema hay migration backend trong checkpoint nay.
+
 Achievement UI hotfix - 2026-08-27 (build 122)
 
 - Sua loi trang Thanh tich hien thi “Khong the tai du lieu” khi trang duoc

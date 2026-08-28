@@ -14,15 +14,25 @@ public sealed class AchievementHubPage : AsyncContentPage
     private readonly AppDatabase _database;
     private readonly Picker _categoryPicker = new() { Title = "Hạng mục" };
     private readonly VerticalStackLayout _list = new() { Spacing = UiKit.SectionSpacing };
+    private readonly string? _traineeFilterUserId;
     private AchievementFeed _feed = new([], 0, 0);
     private IReadOnlyList<AchievementBadge> _badges = [];
     private bool _compactModeEnabled;
     private bool _rendering;
 
-    public AchievementHubPage(AppDatabase database, SessionService session)
-        : base(session, "Thành tích")
+    public AchievementHubPage(
+        AppDatabase database,
+        SessionService session,
+        string? traineeUserId = null,
+        string? traineeName = null)
+        : base(session, string.IsNullOrWhiteSpace(traineeUserId)
+            ? "Thành tích"
+            : $"Thành tích · {traineeName ?? "Cầu thủ học viên"}")
     {
         _database = database;
+        _traineeFilterUserId = string.IsNullOrWhiteSpace(traineeUserId)
+            ? null
+            : traineeUserId.Trim();
         _categoryPicker.ItemsSource = new[]
         {
             "Tất cả hạng mục",
@@ -46,7 +56,7 @@ public sealed class AchievementHubPage : AsyncContentPage
             CurrentUserId);
         _feed = role == UserRole.Trainee
             ? await _database.GetAchievementsAsync(CurrentUserId, CurrentUserId)
-            : await _database.GetAchievementsAsync(CurrentUserId);
+            : await _database.GetAchievementsAsync(CurrentUserId, _traineeFilterUserId);
         Render();
     }
 
@@ -64,45 +74,9 @@ public sealed class AchievementHubPage : AsyncContentPage
                 ? _feed.Achievements
                 : _feed.Achievements.Where(item => item.Achievement.Category == category.Value).ToList();
 
-            var summary = new Grid
-            {
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition(GridLength.Star),
-                    new ColumnDefinition(GridLength.Auto)
-                },
-                ColumnSpacing = 12
-            };
-            var score = new VerticalStackLayout
-            {
-                Spacing = 2,
-                Children =
-                {
-                    UiKit.Caption(
-                        role == UserRole.Trainee
-                            ? "Điểm cá nhân tích lũy"
-                            : "Tổng điểm trong phạm vi",
-                        UiKit.TextSecondary),
-                    UiKit.LargeTitle(_feed.TotalPoints.ToString("+#;-#;0"))
-                }
-            };
-            summary.Children.Add(score);
-            var pending = UiKit.StatusBadge(
-                _feed.PendingCount > 0 ? $"{_feed.PendingCount} chờ duyệt" : "Đã cập nhật",
-                _feed.PendingCount > 0 ? UiKit.Warning : UiKit.Success);
-            var summaryActions = new VerticalStackLayout
-            {
-                Spacing = 6,
-                HorizontalOptions = LayoutOptions.End,
-                Children =
-                {
-                    pending,
-                    UiKit.StatusBadge("Đổi quà · Coming soon", UiKit.Primary)
-                }
-            };
-            Grid.SetColumn(summaryActions, 1);
-            summary.Children.Add(summaryActions);
-            _list.Children.Add(UiKit.Card(summary));
+            var showIndividualScore = role == UserRole.Trainee
+                || _traineeFilterUserId is not null;
+            _list.Children.Add(BuildSummaryCard(showIndividualScore));
 
             // Render can run more than once (for example after changing the
             // category, toggling compact mode or refreshing after an action).
@@ -161,6 +135,13 @@ public sealed class AchievementHubPage : AsyncContentPage
                 "Mỗi Cầu thủ học viên có biểu trưng và điểm riêng. Biểu trưng hiển thị trong 30 ngày; điểm đã ghi nhận được giữ lại vĩnh viễn để tích lũy và đổi quà (Coming soon).",
                 UiKit.TextSecondary));
 
+            if (_traineeFilterUserId is null
+                && role is UserRole.Founder or UserRole.CoFounder or UserRole.Coach)
+            {
+                RenderTraineeIndex(rows, role);
+                return;
+            }
+
             if (rows.Count == 0)
             {
                 _list.Children.Add(UiKit.EmptyState(
@@ -204,6 +185,161 @@ public sealed class AchievementHubPage : AsyncContentPage
         finally
         {
             _rendering = false;
+        }
+    }
+
+    private View BuildSummaryCard(bool showIndividualScore)
+    {
+        var pending = UiKit.StatusBadge(
+            _feed.PendingCount > 0 ? $"{_feed.PendingCount} chờ duyệt" : "Đã cập nhật",
+            _feed.PendingCount > 0 ? UiKit.Warning : UiKit.Success);
+        var actions = new VerticalStackLayout
+        {
+            Spacing = 6,
+            HorizontalOptions = LayoutOptions.End,
+            Children =
+            {
+                pending,
+                UiKit.StatusBadge("Đổi quà · Coming soon", UiKit.Primary)
+            }
+        };
+
+        // Founder/Coach see a trainee index first. Do not expose an aggregate
+        // score here: points belong to each Trainee and are shown after a name
+        // is opened (and in that Trainee's profile).
+        if (!showIndividualScore)
+        {
+            return UiKit.Card(new VerticalStackLayout
+            {
+                Spacing = 6,
+                Children =
+                {
+                    actions,
+                    UiKit.Caption(
+                        "Chọn tên Cầu thủ học viên để xem biểu trưng và lịch sử thành tích riêng.",
+                        UiKit.TextSecondary)
+                }
+            });
+        }
+
+        var score = new VerticalStackLayout
+        {
+            Spacing = 2,
+            Children =
+            {
+                UiKit.Caption("Điểm cá nhân tích lũy", UiKit.TextSecondary),
+                UiKit.LargeTitle(_feed.TotalPoints.ToString("+#;-#;0"))
+            }
+        };
+        var summary = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 12,
+            Children = { score, actions }
+        };
+        Grid.SetColumn(actions, 1);
+        return UiKit.Card(summary);
+    }
+
+    private void RenderTraineeIndex(
+        IReadOnlyList<AchievementRow> rows,
+        UserRole? role)
+    {
+        var groups = rows
+            .Where(item => item.Achievement.Status != AchievementStatus.Rejected)
+            .GroupBy(item => new
+            {
+                item.Achievement.TraineeUserId,
+                item.TraineeName
+            })
+            .OrderBy(group => group.Key.TraineeName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _list.Children.Add(UiKit.Title("Lịch sử thành tích"));
+        _list.Children.Add(UiKit.Caption(
+            "Chỉ Cầu thủ học viên đã có thành tích mới xuất hiện. Chạm vào tên để xem chi tiết.",
+            UiKit.TextSecondary));
+
+        if (groups.Count == 0)
+        {
+            _list.Children.Add(UiKit.EmptyState(
+                "Chưa có Cầu thủ học viên có thành tích",
+                role == UserRole.Coach
+                    ? "Các đề xuất của bạn sẽ xuất hiện sau khi được tạo."
+                    : "Khi có thành tích, học viên sẽ được thêm vào danh sách này."));
+            return;
+        }
+
+        foreach (var group in groups)
+        {
+            var groupRows = group.ToList();
+            var points = groupRows
+                .Where(item => item.RetainsPoints)
+                .Sum(item => item.Achievement.Points);
+            var summary = AchievementBadgeUi.Summarize(
+                new AchievementFeed(
+                    groupRows,
+                    points,
+                    groupRows.Count(item => item.Achievement.Status == AchievementStatus.Pending)))
+                .GetValueOrDefault(group.Key.TraineeUserId)
+                ?? AchievementBadgeUi.EmptySummary();
+            var identity = new VerticalStackLayout
+            {
+                Spacing = 2,
+                Children =
+                {
+                    UiKit.Headline(group.Key.TraineeName),
+                    UiKit.Caption(
+                        $"{groupRows.Count} thành tích · {summary.VisibleBadges.Count} biểu trưng đang hiển thị",
+                        UiKit.TextSecondary)
+                }
+            };
+            if (groupRows.Any(item => item.Achievement.Status == AchievementStatus.Pending))
+            {
+                identity.Children.Add(UiKit.StatusBadge(
+                    "Có đề xuất chờ Founder xác nhận",
+                    UiKit.Warning));
+            }
+
+            var arrow = UiKit.Body("›", UiKit.TextSecondary);
+            arrow.FontSize = 24;
+            arrow.VerticalTextAlignment = TextAlignment.Center;
+            var badges = AchievementBadgeUi.SummaryView(summary, showTotal: false);
+            var grid = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(GridLength.Star),
+                    new ColumnDefinition(GridLength.Auto),
+                    new ColumnDefinition(GridLength.Auto)
+                },
+                ColumnSpacing = 10,
+                Children =
+                {
+                    identity,
+                    badges,
+                    arrow
+                }
+            };
+            Grid.SetColumn(badges, 1);
+            Grid.SetColumn(arrow, 2);
+            var card = UiKit.Card(grid, new Thickness(12));
+            var traineeId = group.Key.TraineeUserId;
+            var traineeName = group.Key.TraineeName;
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += async (_, _) =>
+                await Navigation.PushAsync(new AchievementHubPage(
+                    _database,
+                    Session,
+                    traineeId,
+                    traineeName));
+            card.GestureRecognizers.Add(tap);
+            SemanticProperties.SetDescription(card, $"Xem thành tích của {traineeName}");
+            _list.Children.Add(card);
         }
     }
 
@@ -487,7 +623,7 @@ public sealed class AchievementCreatePage : AsyncContentPage
         _badge.SelectedIndexChanged += (_, _) => RefreshBadgePreview();
         _badge.ItemDisplayBinding = new Binding(nameof(AchievementBadge.Name));
         _trainee.ItemDisplayBinding = new Binding(nameof(MemberRow.DisplayName));
-        _class.ItemDisplayBinding = new Binding(nameof(ClassRow.Class.Name));
+        _class.ItemDisplayBinding = new Binding(nameof(ClassRow.DisplayName));
 
         var save = UiKit.PrimaryButton("Lưu thành tích");
         save.Clicked += async (_, _) => await SaveAsync(save);

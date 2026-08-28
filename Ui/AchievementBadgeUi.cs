@@ -108,7 +108,8 @@ public static class AchievementBadgeUi
     /// </summary>
     public static View SummaryView(
         TraineeAchievementSummary? summary,
-        double iconSize = 23)
+        double iconSize = 23,
+        bool showTotal = true)
     {
         if (summary is null)
         {
@@ -131,12 +132,15 @@ public static class AchievementBadgeUi
             strip.Children.Add(badge);
         }
 
-        var scoreColor = summary.TotalPoints >= 0 ? UiKit.Primary : UiKit.Danger;
-        strip.Children.Add(UiKit.StatusBadge(
-            summary.TotalPoints >= 0
-                ? $"{summary.TotalPoints:+#;-#;0} điểm"
-                : $"{summary.TotalPoints} điểm",
-            scoreColor));
+        if (showTotal)
+        {
+            var scoreColor = summary.TotalPoints >= 0 ? UiKit.Primary : UiKit.Danger;
+            strip.Children.Add(UiKit.StatusBadge(
+                summary.TotalPoints >= 0
+                    ? $"{summary.TotalPoints:+#;-#;0} điểm"
+                    : $"{summary.TotalPoints} điểm",
+                scoreColor));
+        }
         return strip;
     }
 }

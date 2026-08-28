@@ -377,10 +377,32 @@ public sealed class PersonalProfilePage : AsyncContentPage
     protected override async Task LoadAsync()
     {
         var profile = await _database.GetProfileAsync(CurrentUserId);
+        TraineeAchievementSummary? achievementSummary = null;
+        if (Session.CurrentUser?.Role == UserRole.Trainee)
+        {
+            try
+            {
+                var achievementFeed = await _database.GetAchievementsAsync(
+                    CurrentUserId,
+                    CurrentUserId);
+                achievementSummary = AchievementBadgeUi.Summarize(
+                        achievementFeed,
+                        CurrentUserId)
+                    .GetValueOrDefault(CurrentUserId)
+                    ?? AchievementBadgeUi.EmptySummary();
+            }
+            catch (Exception exception)
+            {
+                // Achievement history is supplemental to the profile. A
+                // temporary API failure must not hide the personal details.
+                System.Diagnostics.Debug.WriteLine(
+                    $"Không thể tải thành tích trong hồ sơ cá nhân: {exception.Message}");
+            }
+        }
         if (!_editing)
         {
             _draft = null;
-            BuildReadOnlyView(profile);
+            BuildReadOnlyView(profile, achievementSummary);
             return;
         }
 
@@ -388,7 +410,9 @@ public sealed class PersonalProfilePage : AsyncContentPage
         BuildEditView(profile, _draft);
     }
 
-    private void BuildReadOnlyView(PersonProfile profile)
+    private void BuildReadOnlyView(
+        PersonProfile profile,
+        TraineeAchievementSummary? achievementSummary = null)
     {
         var role = Session.CurrentUser?.Role
                    ?? throw new UnauthorizedAccessException(
@@ -451,6 +475,25 @@ public sealed class PersonalProfilePage : AsyncContentPage
             edit,
             bindAccount
         };
+        if (achievementSummary is not null)
+        {
+            var points = achievementSummary.TotalPoints >= 0
+                ? $"{achievementSummary.TotalPoints:+#;-#;0} điểm"
+                : $"{achievementSummary.TotalPoints} điểm";
+            children.Insert(
+                4,
+                UiKit.Card(new VerticalStackLayout
+                {
+                    Spacing = 6,
+                    Children =
+                    {
+                        UiKit.Headline("Thành tích"),
+                        UiKit.Caption("Điểm cá nhân tích lũy", UiKit.TextSecondary),
+                        UiKit.LargeTitle(points),
+                        AchievementBadgeUi.SummaryView(achievementSummary)
+                    }
+                }));
+        }
         Content = UiKit.ScrollBody(
             children.ToArray());
     }
