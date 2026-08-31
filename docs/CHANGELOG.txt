@@ -1,5 +1,17 @@
 # Change log
 
+Release 3.4 - build 125 - 2026-08-31
+
+- Tang Android ApplicationVersion tu 124 len 125, giu version hien thi 3.4
+  va giu nguyen ApplicationId, database, Cloudflare, Supabase, R2 va OAuth.
+- Sua loi account Trainee khi bam In / luu hoa don PDF: PDF nay duoc tao va
+  chia se/luu cuc bo tren thiet bi, khong goi upload muc dich receipt danh cho
+  luong quan tri nen khong con loi phan quyen upload.
+- Da tao Release APK, Release AAB va Debug APK bang keystore production;
+  apksigner xac nhan Release APK hop le voi v1, v2 va v3. Chi Release APK
+  duoc upload len GitHub Release v3.4-build125; AAB/Debug giu local.
+- Khong co migration hoac thay doi du lieu backend trong lan phat hanh nay.
+
 Release 3.4 - build 124 - 2026-08-28
 
 - Tang Android ApplicationVersion tu 123 len 124, giu version hien thi 3.4

@@ -7,6 +7,7 @@ const bootstrap = await readFile(new URL("Views/BootstrapPage.cs", root), "utf8"
 const asyncPage = await readFile(new URL("Ui/AsyncContentPage.cs", root), "utf8");
 const login = await readFile(new URL("Views/LoginPage.cs", root), "utf8");
 const receipt = await readFile(new URL("Platforms/Android/AndroidReceiptPdfService.cs", root), "utf8");
+const financePages = await readFile(new URL("Views/FinancePages.cs", root), "utf8");
 const uiKit = await readFile(new URL("Ui/UiKit.cs", root), "utf8");
 const achievements = await readFile(new URL("Views/AchievementPages.cs", root), "utf8");
 const achievementBadgeUi = await readFile(new URL("Ui/AchievementBadgeUi.cs", root), "utf8");
@@ -14,6 +15,10 @@ const members = await readFile(new URL("Views/MemberPages.cs", root), "utf8");
 const classes = await readFile(new URL("Views/ClassPages.cs", root), "utf8");
 const personalProfile = await readFile(new URL("Views/ProfileAndNotificationPages.cs", root), "utf8");
 const dataDtos = await readFile(new URL("Models/DataDtos.cs", root), "utf8");
+const traineeTuitionPage = financePages.slice(
+  financePages.indexOf("public sealed class TuitionPage"),
+  financePages.indexOf("public sealed class FounderParentTuitionPage"),
+);
 const memberProfile = members.slice(members.indexOf("public sealed class MemberProfilePage"));
 const badgeExtractor = await readFile(new URL("tools/Extract-AchievementBadgesFromFiles.ps1", root), "utf8");
 const imageNames = await readdir(new URL("Resources/Images/", root));
@@ -28,6 +33,15 @@ test("startup surfaces safe user-facing errors", () => {
 test("online receipt PDF has no legacy offline-only footer", () => {
   assert.doesNotMatch(receipt, /Dữ liệu bản offline/iu);
   assert.match(receipt, /Hóa đơn được tạo bởi AWAKEN Community FCM/u);
+});
+
+test("Trainee receipt export does not upload a privileged receipt object", () => {
+  const exportMethod = traineeTuitionPage.slice(
+    traineeTuitionPage.indexOf("private async Task ExportReceiptAsync"),
+  );
+  assert.match(exportMethod, /_pdfService\.GenerateAsync\(/u);
+  assert.match(exportMethod, /ShareFile\(path,\s*"application\/pdf"\)/u);
+  assert.doesNotMatch(exportMethod, /UpdateReceiptPdfPathAsync\(/u);
 });
 
 test("authentication and common actions keep accessible loading/icon affordances", () => {

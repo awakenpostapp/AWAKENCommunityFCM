@@ -1421,7 +1421,11 @@ public sealed class TuitionPage : AsyncContentPage
                 if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 {
                     path = await _pdfService.GenerateAsync(receipt, club);
-                    await _database.UpdateReceiptPdfPathAsync(receipt.Id, path);
+                    // A Trainee only exports the receipt to the device.  The
+                    // server-side receipt upload endpoint is reserved for
+                    // privileged workflows, so exporting must not try to
+                    // persist the generated PDF in the R2 store.
+                    receipt.PdfPath = path;
                 }
 
                 await Share.Default.RequestAsync(new ShareFileRequest

@@ -1,5 +1,17 @@
 # Change log
 
+## Release 3.4 — build 125 — 2026-08-31
+
+- Tăng Android `ApplicationVersion` từ 124 lên 125, giữ version hiển thị 3.4
+  và giữ nguyên ApplicationId, database, Cloudflare, Supabase, R2 và OAuth.
+- Sửa lỗi account Trainee khi bấm **In / lưu hóa đơn PDF**: PDF nay được tạo
+  và chia sẻ/lưu cục bộ trên thiết bị, không gọi upload mục đích `receipt`
+  dành cho luồng quản trị nên không còn lỗi phân quyền upload.
+- Đã tạo Release APK, Release AAB và Debug APK bằng keystore production;
+  `apksigner` xác nhận Release APK hợp lệ với v1, v2 và v3. Chỉ Release APK
+  được upload lên GitHub Release `v3.4-build125`; AAB/Debug giữ local.
+- Không có migration hoặc thay đổi dữ liệu backend trong lần phát hành này.
+
 ## Release 3.4 — build 124 — 2026-08-28
 
 - Tăng Android `ApplicationVersion` từ 123 lên 124, giữ version hiển thị 3.4
