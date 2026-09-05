@@ -15,8 +15,9 @@ public static class MauiProgram
             .UseMauiApp<App>()
             .ConfigureFonts(fonts =>
             {
-                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-                fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+                // Preserve the established aliases across existing pages.
+                fonts.AddFont("NunitoSans-Regular.ttf", "OpenSansRegular");
+                fonts.AddFont("NunitoSans-Bold.ttf", "OpenSansSemibold");
             });
 
         builder.Services.AddSingleton<PasswordService>();

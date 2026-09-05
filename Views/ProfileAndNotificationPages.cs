@@ -247,6 +247,8 @@ public sealed class ProfileHubPage : AsyncContentPage
                 UiKit.Avatar(Session.CurrentProfile?.PhotoPath ?? string.Empty, 96),
                 profileName,
                 roleBadge,
+                UiKit.NavigationRow("Thông báo", "Tin mới từ đội và các yêu cầu cần xử lý.", "icon_bell.svg",
+                    async (_, _) => await Navigation.PushAsync(new NotificationsPage(_database, Session))),
                 MenuCard("Thông tin cá nhân", "Xem hồ sơ; chỉnh sửa khi cần.",
                     async () => await Navigation.PushAsync(new PersonalProfilePage(
                         _database,

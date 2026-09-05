@@ -38,28 +38,41 @@ public sealed class FounderDashboardPage : AsyncContentPage
         var teamName = string.IsNullOrWhiteSpace(club.TeamName)
             ? "Community Football Club"
             : club.TeamName.Trim();
+        var todayClasses = (await _database.GetClassesAsync(CurrentUserId))
+            .Where(row => row.Class.IsActive && row.Class.StartDate.Date <= DateTime.Today
+                && row.Class.ScheduleDays.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Contains(((int)DateTime.Today.DayOfWeek).ToString()))
+            .OrderBy(row => row.Class.StartTimeMinutes).ToList();
 
         var root = new VerticalStackLayout
         {
             Padding = UiKit.PagePadding,
             Spacing = UiKit.SectionSpacing
         };
-        root.Children.Add(UiKit.SportsHero(
-            club.LogoPath,
-            "Community Football Club",
-            $"Chào {teamName}",
-            founderName,
-            $"{DateTime.Today:dd/MM/yyyy}",
-            subtitleFontSize: 14));
+        root.Children.Add(UiKit.BrandHeader(club.LogoPath, teamName,
+            DomainText.Role(Session.CurrentUser!.Role),
+            async (_, _) => await PushPageAsync(new NotificationsPage(_database, Session))));
+        var welcome = UiKit.LargeTitle("Cùng lớn lên\ncùng bóng đá.");
+        welcome.FontSize = 34;
+        welcome.Margin = new Thickness(0, 6, 0, 0);
+        root.Children.Add(welcome);
+        root.Children.Add(new Border
+        {
+            StrokeThickness = 0,
+            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 18 },
+            HeightRequest = 164,
+            Content = new Image { Source = "academy_community_hero.png", Aspect = Aspect.AspectFill }
+        });
+        root.Children.Add(UiKit.Caption(DateTime.Today.ToString(
+            "dddd, dd 'tháng' M", System.Globalization.CultureInfo.GetCultureInfo("vi-VN"))));
         root.Children.Add(UiKit.OfflineBanner());
-        root.Children.Add(UiKit.Title("Bảng điều hành"));
+        root.Children.Add(UiKit.Title("Việc cần bạn hôm nay"));
 
         if (metrics.OverdueSalaries > 0
             || metrics.PendingTuitionProofs > 0
             || metrics.PendingCoachCheckOuts > 0)
         {
-            var alerts = new VerticalStackLayout { Spacing = 6 };
-            alerts.Children.Add(UiKit.Headline("Cần xử lý"));
+            var alerts = new VerticalStackLayout { Spacing = 10 };
             if (metrics.PendingTuitionProofs > 0)
             {
                 alerts.Children.Add(UiKit.StatusBadge(
@@ -89,8 +102,48 @@ public sealed class FounderDashboardPage : AsyncContentPage
                 alerts.Children.Add(pendingCheckout);
             }
 
-            root.Children.Add(UiKit.Card(alerts));
+            var review = UiKit.PrimaryButton("Xem yêu cầu");
+            review.ImageSource = "icon_arrow_right_white.svg";
+            review.ContentLayout = new Button.ButtonContentLayout(Button.ButtonContentLayout.ImagePosition.Right, 12);
+            review.Clicked += async (_, _) =>
+            {
+                var showCheckout = metrics.PendingCoachCheckOuts > 0;
+                if (showCheckout && (metrics.PendingTuitionProofs > 0 || metrics.OverdueSalaries > 0))
+                {
+                    var selected = await DisplayActionSheetAsync("Yêu cầu cần xử lý", "Đóng", null,
+                        "Check-in / check-out", "Học phí và lương");
+                    if (selected == "Đóng" || selected is null) return;
+                    showCheckout = selected == "Check-in / check-out";
+                }
+                if (showCheckout)
+                    await PushPageAsync(new CoachCheckInReviewPage(_database, Session));
+                else
+                    await PushPageAsync(new FounderFinancePage(_database, Session, _imageSave));
+            };
+            alerts.Children.Add(review);
+            root.Children.Add(alerts);
         }
+        else
+        {
+            root.Children.Add(UiKit.Body("Mọi yêu cầu đã được xử lý. Chúc đội một ngày tập luyện thật tốt!", UiKit.TextSecondary));
+        }
+
+        root.Children.Add(UiKit.DividerLine());
+        root.Children.Add(UiKit.SectionHeading("Lớp học hôm nay", "Xem tất cả",
+            async (_, _) => await PushPageAsync(new ClassListPage(_database, Session, _media, _rememberedLogin))));
+        if (todayClasses.Count == 0)
+            root.Children.Add(UiKit.EmptyState("Hôm nay chưa có lớp", "Bạn có thể xem lịch các ngày khác trong Lớp học."));
+        foreach (var row in todayClasses)
+        {
+            root.Children.Add(UiKit.NavigationRow(row.Class.Name,
+                $"{DomainText.TimeRange(row.Class.StartTimeMinutes, row.Class.EndTimeMinutes)} · {row.Trainees.Count} học viên\n{row.Venue?.Name ?? "Chưa cập nhật sân"}",
+                "tab_classes.svg", async (_, _) => await PushPageAsync(
+                    new ClassDetailsPage(_database, Session, _media, _rememberedLogin, row))));
+        }
+        root.Children.Add(UiKit.NavigationRow("Thành viên", "Đồng sáng lập, Quản lý, Coach và học viên",
+            "tab_people.svg", async (_, _) => await PushPageAsync(
+                new MemberManagementPage(_database, Session, _media, _rememberedLogin))));
+        root.Children.Add(UiKit.Title("Tổng quan đội"));
 
         var metricsGrid = UiKit.MetricGrid(
             (metrics.ActiveClasses.ToString(), "Lớp đang hoạt động", UiKit.Primary),

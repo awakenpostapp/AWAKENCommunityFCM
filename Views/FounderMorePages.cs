@@ -35,6 +35,9 @@ public sealed class MorePage : AsyncContentPage
             {
                 UiKit.OfflineBanner(),
                 UiKit.LargeTitle("Quản lý đội"),
+                UiKit.NavigationRow("Thành viên", "Đồng sáng lập, Quản lý, Coach và học viên", "tab_people.svg",
+                    async (_, _) => await PushPageAsync(new MemberManagementPage(
+                        _database, Session, _media, _rememberedLogin))),
                 MenuCard("Hồ sơ Founder", "Xem hồ sơ; chỉnh sửa ảnh, liên hệ và mật khẩu.",
                     async () => await PushPageAsync(new PersonalProfilePage(
                         _database,

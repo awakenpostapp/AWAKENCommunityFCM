@@ -10,25 +10,25 @@
 
     <Style TargetType="Label">
         <Setter Property="FontFamily" Value="OpenSansRegular" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="TextColor"
                 Value="{AppThemeBinding Light={StaticResource TextPrimaryLight}, Dark={StaticResource TextPrimaryDark}}" />
     </Style>
 
     <Style TargetType="Button">
         <Setter Property="FontFamily" Value="OpenSansSemibold" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="TextColor" Value="White" />
         <Setter Property="BackgroundColor"
                 Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
-        <Setter Property="CornerRadius" Value="22" />
-        <Setter Property="MinimumHeightRequest" Value="44" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="MinimumHeightRequest" Value="50" />
         <Setter Property="Padding" Value="16,8" />
     </Style>
 
     <Style TargetType="Entry">
         <Setter Property="FontFamily" Value="OpenSansRegular" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="MinimumHeightRequest" Value="46" />
         <Setter Property="TextColor"
                 Value="{AppThemeBinding Light={StaticResource TextPrimaryLight}, Dark={StaticResource TextPrimaryDark}}" />
@@ -38,7 +38,7 @@
 
     <Style TargetType="Editor">
         <Setter Property="FontFamily" Value="OpenSansRegular" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="TextColor"
                 Value="{AppThemeBinding Light={StaticResource TextPrimaryLight}, Dark={StaticResource TextPrimaryDark}}" />
         <Setter Property="PlaceholderColor"
@@ -47,7 +47,7 @@
 
     <Style TargetType="Picker">
         <Setter Property="FontFamily" Value="OpenSansRegular" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="MinimumHeightRequest" Value="46" />
         <Setter Property="TextColor"
                 Value="{AppThemeBinding Light={StaticResource TextPrimaryLight}, Dark={StaticResource TextPrimaryDark}}" />
@@ -78,9 +78,11 @@
 
     <Style TargetType="SearchBar">
         <Setter Property="FontFamily" Value="OpenSansRegular" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="MinimumHeightRequest" Value="46" />
         <Setter Property="BackgroundColor" Value="{StaticResource SurfaceSecondaryLight}" />
+        <Setter Property="TextColor" Value="{StaticResource TextPrimaryLight}" />
+        <Setter Property="PlaceholderColor" Value="{StaticResource TextSecondaryLight}" />
     </Style>
 
     <Style TargetType="NavigationPage">

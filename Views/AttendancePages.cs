@@ -120,6 +120,13 @@ public sealed class AttendancePage : AsyncContentPage
     private readonly DateTime _date;
     private readonly bool _historicalMode;
     private readonly List<(AttendanceRosterItem Item, Picker Picker)> _statusPickers = [];
+    private readonly List<(AttendanceRosterItem Item, View Row)> _rosterRows = [];
+    private Label _recordedCount = UiKit.Headline(string.Empty);
+    private Label _statusCounts = UiKit.Caption(string.Empty);
+    private bool _hasUnsavedChanges;
+    private bool _saving;
+    private bool _rosterReady;
+    protected override bool HasUnsavedChanges => _hasUnsavedChanges;
     private Picker? _founderModePicker;
     private TrainingSession? _trainingSession;
 
@@ -139,7 +146,16 @@ public sealed class AttendancePage : AsyncContentPage
 
     protected override async Task LoadAsync()
     {
+        _rosterReady = false;
+        ToolbarItems.Clear();
+        _trainingSession = null;
         _statusPickers.Clear();
+        _rosterRows.Clear();
+        _hasUnsavedChanges = false;
+        // Fresh controls on every authoritative reload: a MAUI view may have
+        // only one parent, even while the previous page tree is being replaced.
+        _recordedCount = UiKit.Headline(string.Empty);
+        _statusCounts = UiKit.Caption(string.Empty);
         _trainingSession = await _database.GetOrCreateSessionAsync(
             CurrentUserId,
             _classRow.Class.Id,
@@ -156,7 +172,7 @@ public sealed class AttendancePage : AsyncContentPage
             {
                 UiKit.OfflineBanner(),
                 UiKit.LargeTitle(_classRow.Class.Name),
-                UiKit.Caption($"{_date:dddd, dd/MM/yyyy} · {_classRow.ScheduleText}"),
+                UiKit.Caption($"{_date.ToString("dddd, dd/MM", System.Globalization.CultureInfo.GetCultureInfo("vi-VN"))} · {DomainText.TimeRange(_classRow.Class.StartTimeMinutes, _classRow.Class.EndTimeMinutes)}"),
                 UiKit.StatusBadge(
                     CoachCheckInTime.IsFounderNoAttendance(_trainingSession)
                         ? "Coach không dạy"
@@ -249,15 +265,48 @@ public sealed class AttendancePage : AsyncContentPage
             }
         }
 
-        var markAll = UiKit.SecondaryButton("Chọn tất cả có mặt");
+        var markAll = UiKit.TextButton("Chọn tất cả có mặt");
         markAll.Clicked += (_, _) =>
         {
+            if (_saving) return;
             foreach (var pair in _statusPickers)
             {
                 pair.Picker.SelectedIndex = (int)AttendanceStatus.Present;
             }
         };
-        root.Children.Add(markAll);
+        markAll.FontSize = 13;
+        markAll.ImageSource = null;
+        var summary = UiKit.Card(new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children = { _recordedCount, _statusCounts }
+        });
+        summary.BackgroundColor = UiKit.TealSoft;
+        summary.StrokeThickness = 0;
+        root.Children.Add(summary);
+        var search = new SearchBar { Placeholder = "Tìm học viên", AutomationId = "attendance-search", BackgroundColor = Colors.Transparent };
+        var emptySearch = UiKit.Caption("Không có học viên phù hợp.");
+        emptySearch.IsVisible = false;
+        search.TextChanged += (_, args) =>
+        {
+            var query = (args.NewTextValue ?? string.Empty).Trim();
+            foreach (var pair in _rosterRows)
+                pair.Row.IsVisible = string.IsNullOrEmpty(query)
+                    || System.Globalization.CultureInfo.GetCultureInfo("vi-VN").CompareInfo.IndexOf(
+                        pair.Item.TraineeName, query,
+                        System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace) >= 0;
+            emptySearch.IsVisible = _rosterRows.Count > 0 && _rosterRows.All(pair => !pair.Row.IsVisible);
+        };
+        var searchRow = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(140) },
+            ColumnSpacing = 8,
+            Children = { search, markAll }
+        };
+        Grid.SetColumn(markAll, 1);
+        root.Children.Add(searchRow);
+        root.Children.Add(emptySearch);
+        root.Children.Add(UiKit.Headline("Học viên"));
 
         if (roster.Count == 0)
         {
@@ -269,9 +318,12 @@ public sealed class AttendancePage : AsyncContentPage
         {
             foreach (var item in roster)
             {
-                root.Children.Add(CreateRosterRow(item));
+                var row = CreateRosterRow(item);
+                _rosterRows.Add((item, row));
+                root.Children.Add(row);
             }
         }
+        UpdateRosterCounts();
 
         var overrideReason = new Editor
         {
@@ -279,27 +331,40 @@ public sealed class AttendancePage : AsyncContentPage
             MinimumHeightRequest = 72,
             IsVisible = RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role)
         };
+        overrideReason.TextChanged += (_, _) => _hasUnsavedChanges = true;
+        if (_founderModePicker is not null)
+            _founderModePicker.SelectedIndexChanged += (_, _) => _hasUnsavedChanges = true;
         if (RoleCapabilities.IsFounderLike(Session.CurrentUser?.Role))
         {
             root.Children.Add(UiKit.LabeledField("LÝ DO (BẮT BUỘC)", overrideReason));
         }
 
-        var draft = UiKit.SecondaryButton("Lưu bản nháp");
+        var draft = UiKit.TextButton("Lưu nháp");
         var submit = UiKit.PrimaryButton(
             _trainingSession.Status == SessionStatus.Submitted
                 ? "Lưu chỉnh sửa điểm danh"
-                : "Điểm danh hoàn tất");
+                : "Hoàn tất điểm danh");
+        submit.AutomationId = "attendance-submit";
+        draft.AutomationId = "attendance-draft";
         draft.IsEnabled = roster.Count > 0;
         draft.IsVisible = _trainingSession.Status != SessionStatus.Submitted;
         submit.IsEnabled = roster.Count > 0;
-        draft.Clicked += async (_, _) =>
-            await SaveAsync(false, overrideReason.Text ?? string.Empty, draft);
+        ToolbarItems.Clear();
+        if (draft.IsVisible)
+        {
+            var draftAction = new ToolbarItem { Text = "Lưu nháp", IsEnabled = draft.IsEnabled, AutomationId = "attendance-draft" };
+            draftAction.Clicked += async (_, _) =>
+            {
+                draftAction.IsEnabled = false;
+                try { await SaveAsync(false, overrideReason.Text ?? string.Empty, draft); }
+                finally { draftAction.IsEnabled = roster.Count > 0; }
+            };
+            ToolbarItems.Add(draftAction);
+        }
         submit.Clicked += async (_, _) =>
             await SubmitAsync(overrideReason.Text ?? string.Empty, submit);
-        root.Children.Add(draft);
-        root.Children.Add(submit);
-
-        Content = UiKit.KeyboardAwareScroll(root);
+        Content = UiKit.WithStickyFooter(UiKit.KeyboardAwareScroll(root), submit);
+        _rosterReady = true;
     }
 
     private View CreateRosterRow(AttendanceRosterItem item)
@@ -312,30 +377,71 @@ public sealed class AttendancePage : AsyncContentPage
 
         picker.SelectedIndex = (int)item.Status;
         _statusPickers.Add((item, picker));
+        var statusButton = UiKit.TextButton(DomainText.Attendance(item.Status));
+        statusButton.AutomationId = $"attendance-status-{item.TraineeUserId}";
+        statusButton.FontSize = 13;
+        statusButton.MinimumHeightRequest = 44;
+        statusButton.Padding = new Thickness(8, 4);
+        statusButton.CornerRadius = 22;
+        void ApplyStatus()
+        {
+            var status = picker.SelectedIndex < 0 ? AttendanceStatus.Unmarked : (AttendanceStatus)picker.SelectedIndex;
+            statusButton.Text = DomainText.Attendance(status);
+            statusButton.TextColor = UiKit.AttendanceColor(status);
+            statusButton.BackgroundColor = status is AttendanceStatus.Present or AttendanceStatus.Excused
+                ? UiKit.TealSoft : UiKit.AttendanceColor(status).WithAlpha(.10f);
+            SemanticProperties.SetDescription(statusButton, $"{item.TraineeName}: {DomainText.Attendance(status)}. Thay đổi trạng thái");
+        }
+        picker.SelectedIndexChanged += (_, _) =>
+        {
+            _hasUnsavedChanges = true;
+            ApplyStatus();
+            UpdateRosterCounts();
+        };
+        statusButton.Clicked += async (_, _) =>
+        {
+            if (_saving) return;
+            var choice = await DisplayActionSheetAsync(item.TraineeName, "Hủy", null, picker.Items.ToArray());
+            var selected = picker.Items.IndexOf(choice);
+            if (selected >= 0) picker.SelectedIndex = selected;
+        };
+        ApplyStatus();
 
         var grid = new Grid
         {
             ColumnSpacing = 8,
             ColumnDefinitions =
             {
-                new ColumnDefinition(44),
+                new ColumnDefinition(38),
                 new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(112)
+                new ColumnDefinition(108)
             }
         };
-        grid.Children.Add(UiKit.Avatar(item.PhotoPath, 42));
+        grid.Padding = new Thickness(0, 9);
+        grid.MinimumHeightRequest = 64;
+        grid.Children.Add(UiKit.IdentityAvatar(item.PhotoPath, item.TraineeName, 36));
         var name = UiKit.Headline(item.TraineeName);
         name.VerticalTextAlignment = TextAlignment.Center;
         Grid.SetColumn(name, 1);
         grid.Children.Add(name);
-        var field = UiKit.LabeledField("TRẠNG THÁI", picker);
-        Grid.SetColumn(field, 2);
-        grid.Children.Add(field);
-        return UiKit.Card(grid, new Thickness(7));
+        Grid.SetColumn(statusButton, 2);
+        grid.Children.Add(statusButton);
+        return new VerticalStackLayout { Spacing = 0, Children = { grid, UiKit.DividerLine() } };
+    }
+
+    private void UpdateRosterCounts()
+    {
+        var marked = _statusPickers.Count(pair => pair.Picker.SelectedIndex > (int)AttendanceStatus.Unmarked);
+        var present = _statusPickers.Count(pair => pair.Picker.SelectedIndex is (int)AttendanceStatus.Present or (int)AttendanceStatus.Late);
+        var absent = _statusPickers.Count(pair => pair.Picker.SelectedIndex == (int)AttendanceStatus.Absent);
+        var excused = _statusPickers.Count(pair => pair.Picker.SelectedIndex == (int)AttendanceStatus.Excused);
+        _recordedCount.Text = $"{marked}/{_statusPickers.Count} học viên đã ghi nhận";
+        _statusCounts.Text = $"{present} có mặt · {absent} vắng · {excused} có phép";
     }
 
     private async Task SubmitAsync(string overrideReason, Button button)
     {
+        if (_saving || !_rosterReady) return;
         var founderNoAttendance = _historicalMode
                                   && _founderModePicker?.SelectedIndex == 2;
         if (_historicalMode && string.IsNullOrWhiteSpace(overrideReason))
@@ -380,7 +486,7 @@ public sealed class AttendancePage : AsyncContentPage
 
     private async Task SaveAsync(bool submit, string overrideReason, Button button)
     {
-        if (_trainingSession is null)
+        if (_trainingSession is null || _saving || !_rosterReady)
         {
             return;
         }
@@ -392,19 +498,28 @@ public sealed class AttendancePage : AsyncContentPage
                 : (AttendanceStatus)pair.Picker.SelectedIndex;
         }
 
-        await RunActionAsync(
-            () => _database.SaveAttendanceAsync(
-                CurrentUserId,
-                _trainingSession.Id,
-                _statusPickers.Select(pair => pair.Item),
-                submit,
-                overrideReason,
-                founderCoachTaughtManually: _historicalMode
-                    && _founderModePicker?.SelectedIndex == 0,
-                founderNoAttendance: _historicalMode
-                    && _founderModePicker?.SelectedIndex == 2),
-            button,
-            submit ? "Đã hoàn tất điểm danh." : "Đã lưu bản nháp.");
+        _saving = true;
+        try
+        {
+            await RunActionAsync(
+                async () =>
+                {
+                    await _database.SaveAttendanceAsync(
+                    CurrentUserId,
+                    _trainingSession.Id,
+                    _statusPickers.Select(pair => pair.Item),
+                    submit,
+                    overrideReason,
+                    founderCoachTaughtManually: _historicalMode
+                        && _founderModePicker?.SelectedIndex == 0,
+                    founderNoAttendance: _historicalMode
+                        && _founderModePicker?.SelectedIndex == 2);
+                    _hasUnsavedChanges = false;
+                },
+                button,
+                submit ? "Đã hoàn tất điểm danh." : "Đã lưu bản nháp.");
+        }
+        finally { _saving = false; }
     }
 
     private static int FounderModeIndex(string? overrideReason)

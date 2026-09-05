@@ -4,33 +4,33 @@ using CommunityFootballClubManager.Models;
 
 namespace CommunityFootballClubManager.Ui;
 
-public static class UiKit
+public static partial class UiKit
 {
-    public static readonly Thickness PagePadding = new(18, 16, 18, 26);
-    public const double SectionSpacing = 14;
+    public static readonly Thickness PagePadding = new(20, 18, 20, 28);
+    public const double SectionSpacing = 18;
 
-    // Lavender canvas + navy surfaces + teal actions follow the supplied
-    // reference while preserving the existing native MAUI navigation/RBAC.
-    public static readonly Color Primary = Color.FromArgb("#159A8A");
-    public static readonly Color PrimaryDark = Color.FromArgb("#0E746A");
-    public static readonly Color TealSoft = Color.FromArgb("#E0F4F0");
-    public static readonly Color Accent = Color.FromArgb("#EA6A5A");
-    public static readonly Color Background = Color.FromArgb("#F5F4FA");
-    public static readonly Color HeroNavy = Color.FromArgb("#111025");
-    public static readonly Color Surface = Colors.White;
-    public static readonly Color SurfaceSecondary = Color.FromArgb("#EAF4FF");
-    public static readonly Color TextPrimary = Color.FromArgb("#16152B");
-    public static readonly Color TextSecondary = Color.FromArgb("#74738A");
-    public static readonly Color Divider = Color.FromArgb("#E7E5F0");
-    public static readonly Color Success = Color.FromArgb("#159A8A");
-    public static readonly Color Warning = Color.FromArgb("#D99A2B");
-    public static readonly Color Danger = Color.FromArgb("#D85A67");
+    // Approved Option 3: warm academy canvas, forest actions and copper accents.
+    // Existing names remain stable for all role-specific pages.
+    public static readonly Color Primary = Color.FromArgb("#103C34");
+    public static readonly Color PrimaryDark = Color.FromArgb("#103C34");
+    public static readonly Color TealSoft = Color.FromArgb("#E4E9DD");
+    public static readonly Color Accent = Color.FromArgb("#B86435");
+    public static readonly Color Background = Color.FromArgb("#FAF7F1");
+    public static readonly Color HeroNavy = Color.FromArgb("#103C34");
+    public static readonly Color Surface = Color.FromArgb("#FFFCF7");
+    public static readonly Color SurfaceSecondary = Color.FromArgb("#E4E9DD");
+    public static readonly Color TextPrimary = Color.FromArgb("#103C34");
+    public static readonly Color TextSecondary = Color.FromArgb("#5D6960");
+    public static readonly Color Divider = Color.FromArgb("#DEDFD3");
+    public static readonly Color Success = Color.FromArgb("#206052");
+    public static readonly Color Warning = Color.FromArgb("#8C631C");
+    public static readonly Color Danger = Color.FromArgb("#B4422F");
 
     public static Label LargeTitle(string text) => new()
     {
         Text = text,
         FontFamily = "OpenSansSemibold",
-        FontSize = 26,
+        FontSize = 30,
         TextColor = TextPrimary,
         LineBreakMode = LineBreakMode.WordWrap
     };
@@ -39,7 +39,7 @@ public static class UiKit
     {
         Text = text,
         FontFamily = "OpenSansSemibold",
-        FontSize = 19,
+        FontSize = 20,
         TextColor = TextPrimary,
         LineBreakMode = LineBreakMode.WordWrap
     };
@@ -56,7 +56,7 @@ public static class UiKit
     public static Label Body(string text, Color? color = null) => new()
     {
         Text = text,
-        FontSize = 13,
+        FontSize = 15,
         TextColor = color ?? TextPrimary,
         LineBreakMode = LineBreakMode.WordWrap
     };
@@ -64,7 +64,7 @@ public static class UiKit
     public static Label Caption(string text, Color? color = null) => new()
     {
         Text = text,
-        FontSize = 12,
+        FontSize = 13,
         TextColor = color ?? TextSecondary,
         LineBreakMode = LineBreakMode.WordWrap
     };
@@ -76,16 +76,9 @@ public static class UiKit
             BackgroundColor = Surface,
             Stroke = Divider,
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 22 },
-            Padding = padding ?? new Thickness(15),
-            Content = content,
-            Shadow = new Shadow
-            {
-                Brush = Colors.Black,
-                Opacity = 0.055f,
-                Offset = new Point(0, 3),
-                Radius = 9
-            }
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Padding = padding ?? new Thickness(16),
+            Content = content
         };
     }
 
@@ -221,12 +214,12 @@ public static class UiKit
             Text = text,
             BackgroundColor = Primary,
             TextColor = Colors.White,
-            CornerRadius = 22,
-            MinimumHeightRequest = 46,
+            CornerRadius = 14,
+            MinimumHeightRequest = 50,
             FontFamily = "OpenSansSemibold",
-            FontSize = 14,
-            Padding = new Thickness(16, 8),
-            ImageSource = icon is null ? null : ImageSource.FromFile(icon)
+            FontSize = 16,
+            Padding = new Thickness(16, 10),
+            ImageSource = icon is null ? null : ImageSource.FromFile(icon.Replace(".svg", "_white.svg"))
         };
         if (clicked is not null)
         {
@@ -242,6 +235,7 @@ public static class UiKit
         var button = PrimaryButton(text, clicked);
         button.BackgroundColor = TealSoft;
         button.TextColor = PrimaryDark;
+        button.ImageSource = IconForAction(text);
         button.BorderColor = Primary.WithAlpha(0.24f);
         button.BorderWidth = 1;
         return button;
@@ -407,7 +401,7 @@ public static class UiKit
                 Text = text,
                 TextColor = color,
                 FontFamily = "OpenSansSemibold",
-                FontSize = 11,
+                FontSize = 12,
                 CharacterSpacing = 0.1
             }
         };
@@ -433,7 +427,7 @@ public static class UiKit
                 Text = text,
                 TextColor = Colors.White,
                 FontFamily = "OpenSansSemibold",
-                FontSize = 11,
+                FontSize = 12,
                 CharacterSpacing = 0.1
             }
         };
@@ -615,14 +609,7 @@ public static class UiKit
             Stroke = Primary.WithAlpha(0.32f),
             StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 18 },
-            Content = content,
-            Shadow = new Shadow
-            {
-                Brush = Colors.Black,
-                Opacity = 0.07f,
-                Offset = new Point(0, 2),
-                Radius = 7
-            }
+            Content = content
         };
     }
 
@@ -634,7 +621,7 @@ public static class UiKit
         string? secondarySubtitle = null,
         double subtitleFontSize = 12)
     {
-        var logo = ClubLogo(logoPath, 74, fillFrame: true);
+        var logo = ClubLogo(logoPath, 58, fillFrame: true);
         logo.VerticalOptions = LayoutOptions.Center;
         logo.HorizontalOptions = LayoutOptions.Center;
         var content = new VerticalStackLayout
@@ -646,14 +633,11 @@ public static class UiKit
             {
                 new Label
                 {
-                    Text = eyebrow.ToUpperInvariant(),
+                    Text = eyebrow,
                     FontFamily = "OpenSansSemibold",
-                    FontSize = 11,
-                    CharacterSpacing = 1.4,
-                    TextColor = Colors.White.WithAlpha(0.72f),
-                    HorizontalTextAlignment = TextAlignment.Center
+                    FontSize = 13,
+                    TextColor = TextSecondary
                 },
-                logo,
                 new Label
                 {
                     Text = title,
@@ -661,16 +645,14 @@ public static class UiKit
                     FontSize = 22,
                     LineHeight = 1.05,
                     LineBreakMode = LineBreakMode.WordWrap,
-                    TextColor = Colors.White,
-                    HorizontalTextAlignment = TextAlignment.Center
+                    TextColor = TextPrimary
                 },
                 new Label
                 {
                     Text = subtitle,
-                    FontSize = subtitleFontSize,
+                    FontSize = Math.Max(13, subtitleFontSize),
                     LineBreakMode = LineBreakMode.WordWrap,
-                    TextColor = Colors.White.WithAlpha(0.82f),
-                    HorizontalTextAlignment = TextAlignment.Center
+                    TextColor = TextSecondary
                 }
             }
         };
@@ -679,28 +661,26 @@ public static class UiKit
             content.Children.Add(new Label
             {
                 Text = secondarySubtitle,
-                FontSize = 12,
+                FontSize = 13,
                 LineBreakMode = LineBreakMode.WordWrap,
-                TextColor = Colors.White.WithAlpha(0.76f),
-                HorizontalTextAlignment = TextAlignment.Center
+                TextColor = TextSecondary
             });
         }
 
+        var layout = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(58), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 16, Children = { logo, content }
+        };
+        Grid.SetColumn(content, 1);
         return new Border
         {
-            MinimumHeightRequest = 220,
-            BackgroundColor = HeroNavy,
+            MinimumHeightRequest = 138,
+            BackgroundColor = TealSoft,
             StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 26 },
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
             Padding = new Thickness(18),
-            Content = content,
-            Shadow = new Shadow
-            {
-                Brush = HeroNavy,
-                Opacity = 0.18f,
-                Offset = new Point(0, 7),
-                Radius = 16
-            }
+            Content = layout
         };
     }
 

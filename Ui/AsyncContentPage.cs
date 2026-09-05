@@ -27,6 +27,10 @@ public abstract class AsyncContentPage : ContentPage
         Session.CurrentUser?.Id
         ?? throw new UnauthorizedAccessException("Phiên đăng nhập đã kết thúc.");
 
+    // A draft form can opt out of automatic tab-return refresh. Explicit
+    // retries and successful actions still reload authoritative server data.
+    protected virtual bool HasUnsavedChanges => false;
+
     protected override async void OnAppearing()
     {
         base.OnAppearing();
@@ -50,7 +54,7 @@ public abstract class AsyncContentPage : ContentPage
 
         if (_appearingReload
             && _hasLoaded
-            && DateTime.UtcNow - _lastLoadedAtUtc < AppearingFreshness)
+            && (HasUnsavedChanges || DateTime.UtcNow - _lastLoadedAtUtc < AppearingFreshness))
         {
             return;
         }

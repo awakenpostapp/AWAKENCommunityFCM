@@ -10,6 +10,37 @@ namespace CommunityFootballClubManager.Ui;
 /// </summary>
 public static class AchievementBadgeUi
 {
+    public static Grid Gallery(IEnumerable<AchievementRow> rows)
+    {
+        var gallery = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 6, RowSpacing = 14
+        };
+        var index = 0;
+        foreach (var row in rows)
+        {
+            var badge = BadgeImage(row.Badge, 88);
+            badge.HorizontalOptions = LayoutOptions.Center;
+            var name = UiKit.Headline(row.Badge.Name);
+            name.FontSize = 14;
+            name.HorizontalTextAlignment = TextAlignment.Center;
+            var points = UiKit.Caption($"{row.Achievement.Points:+#;-#;0} điểm");
+            points.HorizontalTextAlignment = TextAlignment.Center;
+            var tile = new VerticalStackLayout
+            {
+                Spacing = 6,
+                Children = { badge, name, points }
+            };
+            if (index % 3 == 0) gallery.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            Grid.SetColumn(tile, index % 3);
+            Grid.SetRow(tile, index / 3);
+            gallery.Children.Add(tile);
+            index++;
+        }
+        return gallery;
+    }
+
     /// <summary>Default projection used for a trainee with no awards yet.</summary>
     public static TraineeAchievementSummary EmptySummary() =>
         new([], 0);
@@ -102,9 +133,8 @@ public static class AchievementBadgeUi
     }
 
     /// <summary>
-    /// Compact identity strip shown directly below a trainee's name. It wraps
-    /// naturally when a trainee has earned many badges and always shows that
-    /// trainee's own accumulated points.
+    /// Compact identity strip. Only the presentation is capped: the complete
+    /// award collection and personal total remain available in the profile.
     /// </summary>
     public static View SummaryView(
         TraineeAchievementSummary? summary,
@@ -125,11 +155,20 @@ public static class AchievementBadgeUi
             Margin = new Thickness(0, 1, 0, 1)
         };
 
-        foreach (var row in summary.VisibleBadges)
+        foreach (var row in summary.VisibleBadges.Take(3))
         {
             var badge = BadgeImage(row.Badge, iconSize);
             badge.Margin = new Thickness(0, 0, 1, 0);
             strip.Children.Add(badge);
+        }
+
+        if (summary.VisibleBadges.Count > 3)
+        {
+            var more = UiKit.Caption($"+{summary.VisibleBadges.Count - 3}", UiKit.Primary);
+            more.Margin = new Thickness(4, 0, 6, 0);
+            SemanticProperties.SetDescription(more,
+                $"Còn {summary.VisibleBadges.Count - 3} biểu trưng; mở hồ sơ để xem đầy đủ");
+            strip.Children.Add(more);
         }
 
         if (showTotal)

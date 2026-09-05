@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType><UseMaui>true</UseMaui><SingleProject>true</SingleProject>
+    <RootNamespace>CommunityFootballClubManager</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <ApplicationTitle>FCM UI QA</ApplicationTitle>
+    <ApplicationId>com.awaken.fcm.uiharness</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion><ApplicationVersion>1</ApplicationVersion>
+    <SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat><EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Exercise real production pages and services without a production identity. -->
+    <Compile Include="../../Models/**/*.cs" Link="Models/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../Services/**/*.cs" Link="Services/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../Ui/**/*.cs" Link="Ui/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../Views/**/*.cs" Link="Views/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../Platforms/Android/Android*.cs" Link="Platforms/Android/%(Filename)%(Extension)" />
+    <MauiXaml Include="../../Resources/Styles/*.xaml" Link="Resources/Styles/%(Filename)%(Extension)" />
+    <MauiImage Include="../../Resources/Images/*" Link="Resources/Images/%(Filename)%(Extension)" />
+    <MauiFont Include="../../Resources/Fonts/NunitoSans-Regular.ttf;../../Resources/Fonts/NunitoSans-Bold.ttf" />
+    <MauiSplashScreen Include="../../Resources/Splash/awaken_community_fcm_splash.png" Color="#FAF7F1" BaseSize="120,132" />
+    <AndroidResource Include="../../Platforms/Android/Resources/values/colors.xml" Link="Resources/values/colors.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="sqlite-net-pcl" Version="1.11.285" />
+  </ItemGroup>
+</Project>

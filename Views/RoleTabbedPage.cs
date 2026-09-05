@@ -14,7 +14,6 @@ public interface IResettableTabPage
 public sealed class RoleTabbedPage : Microsoft.Maui.Controls.TabbedPage
 {
     private readonly IServiceProvider _services;
-    private NavigationPage? _previousTab;
 
     public RoleTabbedPage(IServiceProvider services, SessionService session)
     {
@@ -33,9 +32,8 @@ public sealed class RoleTabbedPage : Microsoft.Maui.Controls.TabbedPage
             case UserRole.CoFounder:
                 AddTab<FounderDashboardPage>("Tổng quan", "tab_home.svg", hideRootNavigationBar: true);
                 AddTab<ClassListPage>("Lớp học", "tab_classes.svg", hideRootNavigationBar: true);
-                AddTab<MemberManagementPage>("Thành viên", "tab_people.svg", hideRootNavigationBar: true);
-                AddTab<FounderFinancePage>("Tài chính", "tab_finance.svg", hideRootNavigationBar: true);
                 AddTab<AchievementHubPage>("Thành tích", "tab_achievements.svg", hideRootNavigationBar: true);
+                AddTab<FounderFinancePage>("Tài chính", "tab_finance.svg", hideRootNavigationBar: true);
                 AddTab<MorePage>("Quản lý", "tab_more.svg", hideRootNavigationBar: true);
                 break;
             case UserRole.Manager:
@@ -50,21 +48,19 @@ public sealed class RoleTabbedPage : Microsoft.Maui.Controls.TabbedPage
                 AddTab<ClassListPage>("Lớp học", "tab_classes.svg", hideRootNavigationBar: true);
                 AddTab<AttendanceHubPage>("Điểm danh", "tab_attendance.svg", hideRootNavigationBar: true);
                 AddTab<AchievementHubPage>("Thành tích", "tab_achievements.svg", hideRootNavigationBar: true);
-                AddTab<NotificationsPage>("Thông báo", "tab_notifications.svg");
                 AddTab<ProfileHubPage>("Hồ sơ", "tab_profile.svg");
                 break;
             case UserRole.Trainee:
                 AddTab<TraineeDashboardPage>("Hôm nay", "tab_home.svg");
                 AddTab<ClassListPage>("Lịch học", "tab_classes.svg");
                 AddTab<TuitionPage>("Học phí", "tab_tuition.svg");
-                AddTab<AchievementHubPage>("Thành tích", "tab_achievements.svg");
-                AddTab<NotificationsPage>("Thông báo", "tab_notifications.svg");
+                AddTab<AchievementHubPage>("Thành tích", "tab_achievements.svg", hideRootNavigationBar: true);
                 AddTab<ProfileHubPage>("Hồ sơ", "tab_profile.svg");
                 break;
         }
 
-        _previousTab = CurrentPage as NavigationPage;
-        CurrentPageChanged += ResetPreviousTab;
+        // Switching work areas preserves each navigation stack and its filters.
+        // Data-changing child pages still explicitly invalidate their parents.
     }
 
     private void AddTab<TPage>(string title, string icon, bool hideRootNavigationBar = false)
@@ -85,35 +81,4 @@ public sealed class RoleTabbedPage : Microsoft.Maui.Controls.TabbedPage
         Children.Add(navigation);
     }
 
-    private async void ResetPreviousTab(object? sender, EventArgs eventArgs)
-    {
-        var selectedTab = CurrentPage as NavigationPage;
-        var previousTab = _previousTab;
-        _previousTab = selectedTab;
-        if (previousTab is null || ReferenceEquals(previousTab, selectedTab))
-        {
-            return;
-        }
-
-        if (previousTab.Navigation.NavigationStack.FirstOrDefault()
-            is IResettableTabPage resettablePage)
-        {
-            resettablePage.ResetTabState();
-        }
-
-        if (previousTab.Navigation.NavigationStack.Count <= 1)
-        {
-            return;
-        }
-
-        try
-        {
-            await previousTab.PopToRootAsync(false);
-        }
-        catch (Exception exception)
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"Không thể reset tab về trang đầu: {exception.Message}");
-        }
-    }
 }

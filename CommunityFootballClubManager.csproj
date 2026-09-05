@@ -29,7 +29,7 @@
 		<!-- Release 3.4: keep the package/application ID stable so installed
 		     data, OAuth callbacks and the Cloudflare connection remain intact. -->
 		<ApplicationDisplayVersion>3.4</ApplicationDisplayVersion>
-		<ApplicationVersion>126</ApplicationVersion>
+		<ApplicationVersion>127</ApplicationVersion>
 
 		<SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
 		<AndroidUseAapt2>true</AndroidUseAapt2>
@@ -61,6 +61,8 @@
 		<MauiImage Include="Resources\Images\*" />
 		<!-- Custom Fonts -->
 		<MauiFont Include="Resources\Fonts\*" />
+		<MauiFont Remove="Resources\Fonts\NunitoSans-Variable.ttf" />
+		<MauiAsset Include="Resources\Licenses\*" LogicalName="Licenses/%(Filename)%(Extension)" />
 
 		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
@@ -93,6 +95,8 @@
 		<!-- Standalone diagnostic tools have their own project files and must
 		     never be compiled into the Android application. -->
 		<Compile Remove="tools\**\*" />
+		<MauiXaml Remove="tools\**\*" />
+		<MauiCss Remove="tools\**\*" />
 		<EmbeddedResource Remove="tools\**\*" />
 		<Content Remove="tools\**\*" />
 		<None Remove="tools\**\*" />
