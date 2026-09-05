@@ -30,6 +30,8 @@ public static class CoachPositionCatalog
     public const string TacticalCoach = "tactical_coach";
     public const string RehabilitationConditioningCoach = "rehabilitation_conditioning_coach";
     public const string PerformanceCoach = "performance_coach";
+    public const string AssistantCoach = "assistant_coach";
+    public const string Intern = "intern";
 
     public static IReadOnlyList<CoachPositionOption> Options { get; } =
     [
@@ -39,8 +41,18 @@ public static class CoachPositionCatalog
         new(TechnicalCoach, "HLV Kỹ thuật (Technical Coach)"),
         new(TacticalCoach, "HLV Chiến thuật (Tactical Coach)"),
         new(RehabilitationConditioningCoach, "HLV Phục hồi / Thể chất (Rehabilitation / Conditioning Coach)"),
-        new(PerformanceCoach, "HLV Phân tích (Performance Coach)")
+        new(PerformanceCoach, "HLV Phân tích (Performance Coach)"),
+        new(AssistantCoach, "Trợ lý Huấn luyện viên (Assistant Coach)"),
+        new(Intern, "Thực tập sinh (Intern)")
     ];
+
+    /// <summary>
+    /// Interns may be assigned to a class for operational visibility but are
+    /// never entitled to Coach salary. Empty/legacy positions remain payable
+    /// so existing accounts keep their previous behavior until updated.
+    /// </summary>
+    public static bool IsSalaryEligible(string? key) =>
+        !string.Equals(key?.Trim(), Intern, StringComparison.Ordinal);
 
     public static bool IsValid(string? key) =>
         !string.IsNullOrWhiteSpace(key)

@@ -2,6 +2,7 @@ import { hashPassword } from "./auth";
 import {
   AuthUser, ClubRow, ProfileRow, UserRow, normalizeEmail, normalizeUsername, nowIso, newId,
   publicClub, publicProfile, publicUser, isCoachPositionKey,
+  isSalaryEligibleCoachPosition,
 } from "./domain";
 import { ApiError, optionalText, requireDateKey, requireInteger, requireText } from "./http";
 import { allRows, assertTenantEntity } from "./repository";
@@ -255,6 +256,7 @@ type ClassCoachRow = {
   class_id: string;
   coach_user_id: string;
   salary_per_session_vnd: number;
+  coach_position: string | null;
   assigned_at: string;
 };
 
@@ -324,8 +326,11 @@ export async function markMissedCoachCheckIns(
      FROM classes WHERE tenant_id=? AND is_active=1`,
   ).bind(tenantId));
   const assignments = await allRows<ClassCoachRow>(env.DB.prepare(
-    `SELECT class_id, coach_user_id, salary_per_session_vnd, assigned_at
-     FROM class_coaches WHERE tenant_id=? AND is_active=1`,
+    `SELECT cc.class_id, cc.coach_user_id, cc.salary_per_session_vnd,
+            COALESCE(p.coach_position, '') AS coach_position, cc.assigned_at
+       FROM class_coaches cc
+       LEFT JOIN profiles p ON p.user_id=cc.coach_user_id AND p.tenant_id=cc.tenant_id
+      WHERE cc.tenant_id=? AND cc.is_active=1`,
   ).bind(tenantId));
   if (classes.length === 0 || assignments.length === 0) return;
 
@@ -392,7 +397,10 @@ export async function markMissedCoachCheckIns(
             checked_out_at, duration_seconds, approval_status, review_note)
            VALUES (?, ?, ?, ?, '', '', ?, ?, ?, 0, 'rejected', ?)`,
         ).bind(absentId, tenantId, session.id, assignment.coach_user_id,
-          Math.max(0, assignment.salary_per_session_vnd), lockAt.toISOString(),
+          isSalaryEligibleCoachPosition(assignment.coach_position)
+            ? Math.max(0, Number(assignment.salary_per_session_vnd ?? 0))
+            : 0,
+          lockAt.toISOString(),
           lockAt.toISOString(), AUTO_ABSENT_REVIEW_NOTE));
         existingCoachIds.add(assignment.coach_user_id);
       }
@@ -551,8 +559,11 @@ async function recomputePendingCoachSalaries(env: Env, tenantId: string): Promis
        FROM coach_checkins ci
        JOIN training_sessions ts
          ON ts.id=ci.session_id AND ts.tenant_id=ci.tenant_id
+       LEFT JOIN profiles cp
+         ON cp.user_id=ci.coach_user_id AND cp.tenant_id=ci.tenant_id
        WHERE ci.tenant_id=coach_salaries.tenant_id
          AND ci.coach_user_id=coach_salaries.coach_user_id
+         AND COALESCE(cp.coach_position, '') <> 'intern'
          AND ci.approval_status='approved'
         AND ci.checked_out_at IS NOT NULL
         AND (ci.checkout_selfie_object_key <> ''
@@ -577,7 +588,10 @@ async function recomputePendingCoachSalaryDueDates(env: Env, tenantId: string): 
          ON ci.tenant_id=cs.tenant_id AND ci.coach_user_id=cs.coach_user_id
        JOIN training_sessions ts
          ON ts.id=ci.session_id AND ts.tenant_id=ci.tenant_id
+       LEFT JOIN profiles cp
+         ON cp.user_id=ci.coach_user_id AND cp.tenant_id=ci.tenant_id
       WHERE cs.tenant_id=? AND cs.status='pending' AND cs.amount_vnd>0
+        AND COALESCE(cp.coach_position, '') <> 'intern'
         AND ci.approval_status='approved' AND ci.reviewed_at IS NOT NULL
         AND ci.checked_out_at IS NOT NULL
         AND (ci.checkout_selfie_object_key<>''
@@ -1284,6 +1298,12 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
     || row.role === "manager" || row.role === "coach" || row.role === "trainee");
   const incomingUserIds = new Set(importableUserRows.map((row) => String(row.id)));
   const incomingRoles = new Map(importableUserRows.map((row) => [String(row.id), String(row.role)]));
+  const incomingCoachPositions = new Map<string, string>();
+  for (const profile of profileRows) {
+    if (profile.userId !== undefined && profile.coachPosition !== undefined) {
+      incomingCoachPositions.set(String(profile.userId), String(profile.coachPosition ?? ""));
+    }
+  }
   const incomingVenueIds = new Set(venueRows.map((row) => String(row.id)));
   const incomingClassIds = new Set(classRows.map((row) => String(row.id)));
   const incomingSessionIds = new Set(sessionRows.map((row) => String(row.id)));
@@ -1520,13 +1540,21 @@ export async function applySnapshot(env: Env, auth: AuthUser, body: Row): Promis
       const coachUserId = requireText(item.coachUserId, "classCoach.coachUserId", 64);
       await assertTenantOrIncoming(env, "classes", classId, tenantId, incomingClassIds);
       await assertMemberRole(env, coachUserId, tenantId, "coach", incomingRoles);
+      const persistedCoachPosition = incomingCoachPositions.get(coachUserId)
+        ?? (await env.DB.prepare(
+          "SELECT coach_position FROM profiles WHERE user_id=? AND tenant_id=? LIMIT 1",
+        ).bind(coachUserId, tenantId).first<{ coach_position: string | null }>())?.coach_position
+        ?? "";
+      const salaryPerSessionVnd = isSalaryEligibleCoachPosition(persistedCoachPosition)
+        ? requireInteger(item.salaryPerSessionVnd ?? 0, "salaryPerSessionVnd", 0, 2_000_000_000)
+        : 0;
       statements.push(env.DB.prepare(
         `INSERT INTO class_coaches (id, tenant_id, class_id, coach_user_id, salary_per_session_vnd, is_active, assigned_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(class_id, coach_user_id) DO UPDATE SET salary_per_session_vnd=excluded.salary_per_session_vnd,
          is_active=excluded.is_active WHERE class_coaches.tenant_id=excluded.tenant_id`,
       ).bind(id, tenantId, classId, coachUserId,
-        requireInteger(item.salaryPerSessionVnd ?? 0, "salaryPerSessionVnd", 0, 2_000_000_000),
+        salaryPerSessionVnd,
         item.isActive === false ? 0 : 1, typeof item.assignedAt === "string" ? item.assignedAt : now));
     }
 

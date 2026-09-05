@@ -1305,6 +1305,7 @@ public sealed class ClassEditorPage : ContentPage
     private readonly Entry _defaultFee = UiKit.MoneyEntry("Ví dụ: 1,000,000 VNĐ");
     private readonly Dictionary<DayOfWeek, CheckBox> _days = [];
     private readonly Dictionary<string, (CheckBox Check, Entry SalaryPerSession)> _coachRows = [];
+    private readonly Dictionary<string, bool> _coachSalaryEligible = [];
     private readonly Dictionary<string, CheckBox> _traineeChecks = [];
     private readonly Dictionary<string, bool> _traineeTuitionSupport = [];
     private readonly Dictionary<string, Switch> _traineeTrialSwitches = [];
@@ -1532,17 +1533,23 @@ public sealed class ClassEditorPage : ContentPage
             {
                 var assignment = assignments.FirstOrDefault(item =>
                     item.CoachUserId == coach.Account.Id);
+                var salaryEligible = CoachPositionCatalog.IsSalaryEligible(
+                    coach.Profile.CoachPosition);
+                _coachSalaryEligible[coach.Account.Id] = salaryEligible;
                 var check = new CheckBox
                 {
                     IsChecked = assignment is not null
                 };
                 var salary = UiKit.MoneyEntry(
                     "Nhập lương mỗi buổi",
-                    assignment?.SalaryPerSessionVnd ?? 0);
+                    salaryEligible ? assignment?.SalaryPerSessionVnd ?? 0 : 0);
+                salary.IsReadOnly = !salaryEligible;
                 var salaryField = UiKit.LabeledField(
                     "LƯƠNG / BUỔI HỌC",
                     salary,
-                    "Lương được cộng khi Founder xác nhận selfie check-in của Huấn Luyện Viên.");
+                    salaryEligible
+                        ? "Lương được cộng khi Founder xác nhận selfie check-in của Huấn Luyện Viên."
+                        : "Thực tập sinh được phân công để theo dõi lớp nhưng không tính lương.");
                 salaryField.IsVisible = check.IsChecked;
                 check.CheckedChanged += (_, args) => salaryField.IsVisible = args.Value;
                 _coachRows[coach.Account.Id] = (check, salary);
@@ -1769,13 +1776,16 @@ public sealed class ClassEditorPage : ContentPage
                 .Where(pair => pair.Value.Check.IsChecked)
                 .ToDictionary(
                     pair => pair.Key,
-                    pair => UiKit.ParseMoney(pair.Value.SalaryPerSession.Text));
+                    pair => _coachSalaryEligible.GetValueOrDefault(pair.Key, true)
+                        ? UiKit.ParseMoney(pair.Value.SalaryPerSession.Text)
+                        : 0L);
             if (coachRates.Count == 0)
             {
                 throw new InvalidOperationException(
                     "Khi tạo lớp học phải thêm ít nhất một Huấn Luyện Viên (Coach).");
             }
-            if (coachRates.Any(pair => pair.Value <= 0))
+            if (coachRates.Any(pair => pair.Value <= 0
+                                       && _coachSalaryEligible.GetValueOrDefault(pair.Key, true)))
             {
                 throw new InvalidOperationException(
                     "Vui lòng nhập lương mỗi buổi cho Huấn Luyện Viên đã chọn.");

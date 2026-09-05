@@ -95,11 +95,18 @@ export const COACH_POSITION_KEYS = [
   "tactical_coach",
   "rehabilitation_conditioning_coach",
   "performance_coach",
+  "assistant_coach",
+  "intern",
 ] as const;
 
 export function isCoachPositionKey(value: unknown): value is typeof COACH_POSITION_KEYS[number] {
   return typeof value === "string"
     && (COACH_POSITION_KEYS as readonly string[]).includes(value);
+}
+
+/** Interns can teach alongside a Coach but do not receive lesson salary. */
+export function isSalaryEligibleCoachPosition(value: unknown): boolean {
+  return typeof value !== "string" || value.trim() !== "intern";
 }
 
 export interface AuthUser {

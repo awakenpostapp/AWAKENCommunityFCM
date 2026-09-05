@@ -85,5 +85,30 @@ Check("personal gallery renders every award with three bounded columns", () =>
         Require(Grid.GetColumn(tile) == i % 3 && Grid.GetRow(tile) == i / 3, "Award is on the wrong grid track");
     }
 });
+Check("tab reset returns a nested tab to its home page", () =>
+{
+    var root = new ContentPage { Title = "Home" };
+    var navigation = new NavigationPage(root);
+    navigation.PushAsync(new ContentPage { Title = "Child" }).GetAwaiter().GetResult();
+
+    TabNavigationPolicy.ResetToHomeAsync(navigation).GetAwaiter().GetResult();
+
+    Require(navigation.Navigation.NavigationStack.Count == 1, "Nested page remained on the tab stack");
+    Require(ReferenceEquals(navigation.Navigation.NavigationStack[0], root), "Tab did not return to its original home page");
+});
+Check("Coach catalog includes assistant and intern positions", () =>
+{
+    Require(CoachPositionCatalog.Options.Any(option => option.Key == "assistant_coach"),
+        "Assistant Coach position is missing");
+    Require(CoachPositionCatalog.Options.Any(option => option.Key == "intern"),
+        "Intern position is missing");
+});
+Check("Intern Coach position is unpaid", () =>
+{
+    Require(!CoachPositionCatalog.IsSalaryEligible("intern"),
+        "Intern position must never create a salary amount");
+    Require(CoachPositionCatalog.IsSalaryEligible("head_coach_manager"),
+        "Paid Coach positions must remain salary eligible");
+});
 Console.WriteLine($"RESULT: {failed} failures");
 return failed == 0 ? 0 : 1;

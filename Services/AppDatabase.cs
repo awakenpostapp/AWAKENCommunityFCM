@@ -2879,6 +2879,15 @@ public sealed partial class AppDatabase
             }
             trainingClass.ManagerUserId = normalizedManagerId;
 
+            // Interns may be assigned for class visibility, but their rate is
+            // always zero even if an older client sends a stale salary value.
+            var effectiveCoachRates = coachRates.ToDictionary(
+                pair => pair.Key,
+                pair => CoachPositionCatalog.IsSalaryEligible(
+                    Online.Profile(pair.Key)?.CoachPosition)
+                    ? pair.Value
+                    : 0L);
+
             var onlineTraineeAccounts = Online.Users
                 .Where(item => item.Role == UserRole.Trainee)
                 .ToDictionary(item => item.Id);
@@ -2891,7 +2900,7 @@ public sealed partial class AppDatabase
                                           || (!onlineTraineeAccounts[pair.Key].IsTuitionSupported
                                               && pair.Value <= 0)))
                 throw new InvalidOperationException("Học phí của học viên phải lớn hơn 0.");
-            if (coachRates.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value < 0))
+            if (effectiveCoachRates.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value < 0))
                 throw new InvalidOperationException("Mức lương mỗi buổi của Coach không được âm.");
 
             trainingClass.Name = trainingClass.Name.Trim();
@@ -2901,11 +2910,11 @@ public sealed partial class AppDatabase
                 .ToList();
             foreach (var link in onlineCurrentCoaches)
             {
-                link.IsActive = coachRates.ContainsKey(link.CoachUserId);
-                if (coachRates.TryGetValue(link.CoachUserId, out var rate))
+                link.IsActive = effectiveCoachRates.ContainsKey(link.CoachUserId);
+                if (effectiveCoachRates.TryGetValue(link.CoachUserId, out var rate))
                     link.SalaryPerSessionVnd = rate;
             }
-            var newCoaches = coachRates
+            var newCoaches = effectiveCoachRates
                 .Where(pair => onlineCurrentCoaches.All(item => item.CoachUserId != pair.Key))
                 .Select(pair => new ClassCoachAssignment
                 {
@@ -3038,7 +3047,18 @@ public sealed partial class AppDatabase
             throw new InvalidOperationException("Học phí của học viên phải lớn hơn 0.");
         }
 
-        if (coachRates.Any(pair =>
+        // Interns may be assigned for class visibility, but their rate is
+        // always zero even if an older client sends a stale salary value.
+        var coachProfiles = (await Database.Table<PersonProfile>().ToListAsync())
+            .ToDictionary(item => item.UserId);
+        var effectiveOfflineCoachRates = coachRates.ToDictionary(
+            pair => pair.Key,
+            pair => CoachPositionCatalog.IsSalaryEligible(
+                coachProfiles.GetValueOrDefault(pair.Key)?.CoachPosition)
+                ? pair.Value
+                : 0L);
+
+        if (effectiveOfflineCoachRates.Any(pair =>
                 string.IsNullOrWhiteSpace(pair.Key) || pair.Value < 0))
         {
             throw new InvalidOperationException("Mức lương mỗi buổi của Coach không được âm.");
@@ -3056,15 +3076,15 @@ public sealed partial class AppDatabase
             .ToListAsync();
         foreach (var link in currentCoaches)
         {
-            link.IsActive = coachRates.ContainsKey(link.CoachUserId);
-            if (coachRates.TryGetValue(link.CoachUserId, out var rate))
+            link.IsActive = effectiveOfflineCoachRates.ContainsKey(link.CoachUserId);
+            if (effectiveOfflineCoachRates.TryGetValue(link.CoachUserId, out var rate))
             {
                 link.SalaryPerSessionVnd = rate;
             }
         }
 
         var newCoachLinks = new List<ClassCoachAssignment>();
-        foreach (var pair in coachRates)
+        foreach (var pair in effectiveOfflineCoachRates)
         {
             if (currentCoaches.All(item => item.CoachUserId != pair.Key))
             {
@@ -7889,6 +7909,15 @@ public sealed partial class AppDatabase
         string coachUserId,
         string period)
     {
+        // An Intern can be attached to a class for roster visibility, but is
+        // never entitled to salary. Keep this guard in the calculation path
+        // so legacy assignments/check-ins cannot create offline pay rows.
+        var coachProfile = await Database.FindAsync<PersonProfile>(coachUserId);
+        if (!CoachPositionCatalog.IsSalaryEligible(coachProfile?.CoachPosition))
+        {
+            return 0;
+        }
+
         if (!DateTime.TryParseExact(
                 $"{period}-01",
                 "yyyy-MM-dd",

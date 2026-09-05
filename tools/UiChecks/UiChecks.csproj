@@ -10,6 +10,7 @@
     <PackageReference Include="sqlite-net-pcl" Version="1.11.285" />
     <Compile Include="../../Models/*.cs" Link="Models/%(Filename)%(Extension)" />
     <Compile Include="../../Ui/UiKit*.cs" Link="Ui/%(Filename)%(Extension)" />
+    <Compile Include="../../Ui/TabNavigationPolicy.cs" Link="Ui/TabNavigationPolicy.cs" />
     <Compile Include="../../Ui/AchievementBadgeUi.cs" Link="Ui/AchievementBadgeUi.cs" />
     <Using Include="Microsoft.Maui" />
     <Using Include="Microsoft.Maui.Controls" />

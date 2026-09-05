@@ -59,8 +59,39 @@ public sealed class RoleTabbedPage : Microsoft.Maui.Controls.TabbedPage
                 break;
         }
 
-        // Switching work areas preserves each navigation stack and its filters.
-        // Data-changing child pages still explicitly invalidate their parents.
+        CurrentPageChanged += HandleCurrentPageChanged;
+    }
+
+    private async void HandleCurrentPageChanged(object? sender, EventArgs e)
+    {
+        if (CurrentPage is not NavigationPage navigation)
+        {
+            return;
+        }
+
+        // A tab is a home surface, not a bookmark into a child workflow. Clear
+        // the selected tab's stack as soon as it becomes active. Invalidate
+        // cached async roots so their first screen is authoritative when the
+        // user returns after completing a child action elsewhere.
+        var root = navigation.Navigation.NavigationStack.FirstOrDefault();
+        if (root is AsyncContentPage asyncRoot)
+        {
+            asyncRoot.InvalidateLoadCache();
+        }
+        if (root is IResettableTabPage resettable)
+        {
+            resettable.ResetTabState();
+        }
+
+        try
+        {
+            await TabNavigationPolicy.ResetToHomeAsync(navigation);
+        }
+        catch (InvalidOperationException)
+        {
+            // A rapid tab change can dispose a transition before PopToRootAsync
+            // completes. The next selection event will perform the same reset.
+        }
     }
 
     private void AddTab<TPage>(string title, string icon, bool hideRootNavigationBar = false)

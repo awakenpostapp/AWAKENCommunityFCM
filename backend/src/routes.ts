@@ -23,6 +23,7 @@ import {
   normalizeUsername,
   nowIso,
   isCoachPositionKey,
+  isSalaryEligibleCoachPosition,
   publicClub,
   publicProfile,
   publicUser,
@@ -743,13 +744,18 @@ export async function classes(request: Request, env: Env): Promise<Response> {
     coachUserIds: body.coachUserIds
       ?? (body.coachUserId === undefined ? undefined : [body.coachUserId]),
   });
+  const coachPositions = new Map<string, string>();
   for (const coachUserId of coachUserIds) {
     const coach = await env.DB.prepare(
-      "SELECT id FROM users WHERE id=? AND tenant_id=? AND role='coach' AND is_active=1 LIMIT 1",
-    ).bind(coachUserId, tenantId).first();
+      `SELECT u.id, COALESCE(p.coach_position, '') AS coach_position
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id=u.id AND p.tenant_id=u.tenant_id
+        WHERE u.id=? AND u.tenant_id=? AND u.role='coach' AND u.is_active=1 LIMIT 1`,
+    ).bind(coachUserId, tenantId).first<{ id: string; coach_position: string | null }>();
     if (!coach) {
       throw new ApiError(400, "invalid_coach", "Coach phải là account đang hoạt động trong đội.");
     }
+    coachPositions.set(coachUserId, String(coach.coach_position ?? ""));
   }
   const managerUserId = body.managerUserId === undefined || body.managerUserId === null
     ? null
@@ -768,6 +774,12 @@ export async function classes(request: Request, env: Env): Promise<Response> {
   const startDate = body.startDate === undefined
     ? now.slice(0, 10)
     : requireDateKey(body.startDate, "startDate");
+  const requestedSalaryPerSessionVnd = requireInteger(
+    body.salaryPerSessionVnd ?? 0,
+    "salaryPerSessionVnd",
+    0,
+    2_000_000_000,
+  );
   await env.DB.prepare(
     `INSERT INTO classes (id, tenant_id, venue_id, manager_user_id, name, schedule_days, start_date, start_time_minutes, end_time_minutes,
      tuition_session_count, default_cycle_fee_vnd, is_active, created_at, updated_at)
@@ -781,7 +793,10 @@ export async function classes(request: Request, env: Env): Promise<Response> {
     `INSERT INTO class_coaches (id, tenant_id, class_id, coach_user_id, salary_per_session_vnd, is_active, assigned_at)
      VALUES (?, ?, ?, ?, ?, 1, ?)`,
   ).bind(newId(), tenantId, id, coachUserId,
-    requireInteger(body.salaryPerSessionVnd ?? 0, "salaryPerSessionVnd", 0, 2_000_000_000), now));
+    isSalaryEligibleCoachPosition(coachPositions.get(coachUserId))
+      ? requestedSalaryPerSessionVnd
+      : 0,
+    now));
   await env.DB.batch(coachStatements);
   return json({ id }, 201);
 }
@@ -1565,9 +1580,13 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
         const assignments = await allRows<{
           coach_user_id: string;
           salary_per_session_vnd: number;
+          coach_position: string | null;
         }>(env.DB.prepare(
-          `SELECT coach_user_id, salary_per_session_vnd FROM class_coaches
-           WHERE tenant_id=? AND class_id=? AND is_active=1`,
+          `SELECT cc.coach_user_id, cc.salary_per_session_vnd,
+                  COALESCE(p.coach_position, '') AS coach_position
+             FROM class_coaches cc
+             LEFT JOIN profiles p ON p.user_id=cc.coach_user_id AND p.tenant_id=cc.tenant_id
+            WHERE cc.tenant_id=? AND cc.class_id=? AND cc.is_active=1`,
         ).bind(tenantId, session.class_id));
         const existing = await allRows<{
           id: string;
@@ -1579,6 +1598,9 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
         ).bind(tenantId, actualSessionId));
         const existingByCoach = new Map(existing.map((row) => [row.coach_user_id, row]));
         const substitutionStatements = assignments.flatMap((assignment) => {
+          const assignmentRate = isSalaryEligibleCoachPosition(assignment.coach_position)
+            ? Math.max(0, Number(assignment.salary_per_session_vnd ?? 0))
+            : 0;
           const current = existingByCoach.get(assignment.coach_user_id);
           if (current?.checkin_selfie_object_key) return [];
           if (current) {
@@ -1587,7 +1609,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
                salary_per_session_vnd_snapshot=?, checked_in_at=?, checked_out_at=?, duration_seconds=0,
                approval_status='approved', reviewed_by_user_id=?, reviewed_at=?, review_note=?
                WHERE id=? AND tenant_id=?`,
-            ).bind(assignment.salary_per_session_vnd, now, now, auth.id, now,
+            ).bind(assignmentRate, now, now, auth.id, now,
               FOUNDER_SUBSTITUTED_COACH_REVIEW_NOTE, current.id, tenantId)];
           }
           return [env.DB.prepare(
@@ -1598,7 +1620,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
               reviewed_at, review_note)
              VALUES (?, ?, ?, ?, '', '', ?, ?, ?, 0, 'approved', ?, ?, ?)`,
           ).bind(newId(), tenantId, actualSessionId, assignment.coach_user_id,
-            assignment.salary_per_session_vnd, now, now, auth.id, now,
+            assignmentRate, now, now, auth.id, now,
             FOUNDER_SUBSTITUTED_COACH_REVIEW_NOTE)];
         });
         for (let offset = 0; offset < substitutionStatements.length; offset += 100) {
@@ -1618,9 +1640,13 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
         const assignments = await allRows<{
           coach_user_id: string;
           salary_per_session_vnd: number;
+          coach_position: string | null;
         }>(env.DB.prepare(
-          `SELECT coach_user_id, salary_per_session_vnd FROM class_coaches
-           WHERE tenant_id=? AND class_id=? AND is_active=1`,
+          `SELECT cc.coach_user_id, cc.salary_per_session_vnd,
+                  COALESCE(p.coach_position, '') AS coach_position
+             FROM class_coaches cc
+             LEFT JOIN profiles p ON p.user_id=cc.coach_user_id AND p.tenant_id=cc.tenant_id
+            WHERE cc.tenant_id=? AND cc.class_id=? AND cc.is_active=1`,
         ).bind(tenantId, session.class_id));
         const existing = await allRows<{
           id: string;
@@ -1647,6 +1673,9 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
         const period = String(session.session_date).slice(0, 7);
         const dueDate = salaryDueDateForConfirmation(now);
         for (const assignment of assignments) {
+          const assignmentRate = isSalaryEligibleCoachPosition(assignment.coach_position)
+            ? Math.max(0, Number(assignment.salary_per_session_vnd ?? 0))
+            : 0;
           const current = existingByCoach.get(assignment.coach_user_id);
           const alreadyPayable = Boolean(
             current
@@ -1666,8 +1695,8 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
                approval_status='approved', reviewed_by_user_id=?, reviewed_at=?,
                review_note=? WHERE id=? AND tenant_id=?`,
             ).bind(
-              Number(current.salary_per_session_vnd_snapshot ?? assignment.salary_per_session_vnd)
-                || assignment.salary_per_session_vnd,
+              Number(current.salary_per_session_vnd_snapshot ?? assignmentRate)
+                || assignmentRate,
               checkedInAt,
               checkedOutAt,
               Math.max(0, Number(current.duration_seconds ?? 0)),
@@ -1691,7 +1720,7 @@ export async function attendance(request: Request, env: Env, sessionId?: string)
               tenantId,
               actualSessionId,
               assignment.coach_user_id,
-              assignment.salary_per_session_vnd,
+              assignmentRate,
               checkedInAt,
               checkedOutAt,
               auth.id,
@@ -1830,10 +1859,20 @@ export async function checkIn(request: Request, env: Env): Promise<Response> {
       "Coach đã được ghi nhận vắng check-in và ca đã bị khóa.");
   }
   const assigned = await env.DB.prepare(
-    `SELECT cc.salary_per_session_vnd FROM class_coaches cc JOIN training_sessions ts ON ts.class_id=cc.class_id
-     WHERE ts.id=? AND cc.tenant_id=? AND cc.coach_user_id=? AND cc.is_active=1 LIMIT 1`,
-  ).bind(sessionId, tenantId, auth.id).first<{ salary_per_session_vnd: number }>();
+    `SELECT cc.salary_per_session_vnd,
+            COALESCE(p.coach_position, '') AS coach_position
+       FROM class_coaches cc
+       JOIN training_sessions ts ON ts.class_id=cc.class_id
+       LEFT JOIN profiles p ON p.user_id=cc.coach_user_id AND p.tenant_id=cc.tenant_id
+      WHERE ts.id=? AND cc.tenant_id=? AND cc.coach_user_id=? AND cc.is_active=1 LIMIT 1`,
+  ).bind(sessionId, tenantId, auth.id).first<{
+    salary_per_session_vnd: number;
+    coach_position: string | null;
+  }>();
   if (!assigned) throw new ApiError(403, "not_assigned", "Coach chưa được phân công lớp này.");
+  const salaryPerSessionVnd = isSalaryEligibleCoachPosition(assigned.coach_position)
+    ? Math.max(0, Number(assigned.salary_per_session_vnd ?? 0))
+    : 0;
   const objectKey = await uploadObjectForOwner(env, tenantId, auth.id,
     requireText(body.uploadId, "uploadId", 64), "checkin_selfie");
   // A rejected check-in must be reusable.  Do not rely on the composite
@@ -1851,11 +1890,11 @@ export async function checkIn(request: Request, env: Env): Promise<Response> {
        checked_in_at=?, checked_out_at=NULL, duration_seconds=0, approval_status='pending', reviewed_by_user_id=NULL,
        reviewed_at=NULL, review_note='', salary_per_session_vnd_snapshot=?
        WHERE id=? AND tenant_id=? AND session_id=? AND coach_user_id=?`,
-    ).bind(objectKey, now, assigned.salary_per_session_vnd, id, tenantId, sessionId, auth.id)
+    ).bind(objectKey, now, salaryPerSessionVnd, id, tenantId, sessionId, auth.id)
     : env.DB.prepare(
       `INSERT INTO coach_checkins (id, tenant_id, session_id, coach_user_id, checkin_selfie_object_key,
        salary_per_session_vnd_snapshot, checked_in_at, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-    ).bind(id, tenantId, sessionId, auth.id, objectKey, assigned.salary_per_session_vnd, now);
+    ).bind(id, tenantId, sessionId, auth.id, objectKey, salaryPerSessionVnd, now);
   await env.DB.batch([
     // A rejected check-in may have left the session submitted after checkout.
     // Re-opening it lets the Coach submit attendance again on the retry.
@@ -1977,6 +2016,12 @@ export async function reviewCheckIn(request: Request, env: Env, id: string): Pro
   if (checkInRow.approval_status === "approved" && status !== "approved") {
     throw new ApiError(409, "approved_checkin_locked", "Check-in đã tính lương không thể chuyển sang từ chối.");
   }
+  const coachProfile = await env.DB.prepare(
+    "SELECT coach_position FROM profiles WHERE user_id=? AND tenant_id=? LIMIT 1",
+  ).bind(String(checkInRow.coach_user_id ?? ""), tenantId).first<{ coach_position: string | null }>();
+  const approvedSalaryPerSessionVnd = isSalaryEligibleCoachPosition(coachProfile?.coach_position)
+    ? Math.max(0, Number(checkInRow.salary_per_session_vnd_snapshot ?? 0))
+    : 0;
   const now = nowIso();
   const statements: D1PreparedStatement[] = [env.DB.prepare(
     `UPDATE coach_checkins SET approval_status=?, reviewed_by_user_id=?, reviewed_at=?, review_note=?
@@ -1995,7 +2040,7 @@ export async function reviewCheckIn(request: Request, env: Env, id: string): Pro
        amount_vnd=coach_salaries.amount_vnd+excluded.amount_vnd, updated_at=excluded.updated_at
        WHERE coach_salaries.tenant_id=excluded.tenant_id`,
     ).bind(newId(), tenantId, period,
-       Number(checkInRow.salary_per_session_vnd_snapshot ?? 0), dueDate, now,
+       approvedSalaryPerSessionVnd, dueDate, now,
        id, tenantId, auth.id, now));
   }
   if (status === "rejected") {
